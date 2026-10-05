@@ -1,9 +1,9 @@
-import ZAI from 'z-ai-web-dev-sdk'
+import { dahlChat } from '@/lib/dahl-client'
 import type { ParsedResume } from '@/lib/types'
 
 const SYSTEM_PROMPT = `You are an expert resume parser and career analyst specializing in technical resumes for internship applications.
 
-Your task: Analyze the resume text provided by the user and extract structured data. You must respond with ONLY valid JSON (no markdown fences, no commentary).
+Your task: Analyze the resume text provided by the user and extract structured data. You must respond with ONLY valid JSON (no markdown fences, no commentary, no reasoning trace).
 
 The JSON must follow this exact schema:
 {
@@ -36,23 +36,21 @@ Critical rules:
 2. normalizedSkills must be a clean, deduplicated, title-cased version of the skills array, suitable for fuzzy matching against internship requirements.
 3. If a section is completely absent from the resume, return an empty array, never invent data.
 4. Be liberal in capturing skills (tools, frameworks, languages, methodologies, soft skills) but conservative in claiming certifications are verified.
-5. Return ONLY the JSON object.`
+5. Return ONLY the JSON object — no prose, no markdown fences, no explanation.`
 
 export async function parseResume(rawText: string, fileName: string): Promise<ParsedResume> {
-  const zai = await ZAI.create()
-
-  const completion = await zai.chat.completions.create({
+  const content = await dahlChat({
     messages: [
-      { role: 'assistant', content: SYSTEM_PROMPT },
+      { role: 'system', content: SYSTEM_PROMPT },
       {
         role: 'user',
         content: `Parse the following resume content (from file "${fileName}") and return the structured JSON.\n\n--- RESUME START ---\n${rawText}\n--- RESUME END ---`,
       },
     ],
-    thinking: { type: 'disabled' },
+    temperature: 0.1,
+    maxTokens: 4096,
   })
 
-  const content = completion.choices[0]?.message?.content ?? ''
   const cleaned = content
     .replace(/^```json\s*/i, '')
     .replace(/^```\s*/i, '')
@@ -63,7 +61,7 @@ export async function parseResume(rawText: string, fileName: string): Promise<Pa
   try {
     parsed = JSON.parse(cleaned)
   } catch {
-    // attempt to extract the first JSON object
+    // attempt to extract the first balanced JSON object
     const match = cleaned.match(/\{[\s\S]*\}/)
     if (!match) {
       throw new Error('AI returned an unparseable resume analysis.')

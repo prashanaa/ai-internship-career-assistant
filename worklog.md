@@ -50,3 +50,37 @@ Stage Summary:
 - Application is fully functional and browser-verified end-to-end.
 - The user's original request is satisfied: collect user info + resume → AI validates skills (with a reusable normalizedSkills set), projects (per-project skills), and certifications (with verified flag) → converted skills filter internships by real qualifications with match scores.
 - Brand theme (navy #173f5f + light blue #eaf2f8) preserved from NANDHA.HTML.
+
+---
+Task ID: 10
+Agent: main (Z.ai Code)
+Task: Replace the z-ai-web-dev-sdk AI backend with the Dahl Inference API (https://inference.dahl.global/docs/) using the user-provided API key.
+
+Work Log:
+- Read credentials from /home/z/my-project/upload/dahl-credentials.txt (api_key: dahl_ERVacbVJcFs4XZZuqwdJMx5DoTAEau6Lw).
+- Used z-ai page_reader CLI to fetch Dahl docs (quickstart, authentication, models, api pages).
+  - Base URL: https://inference.dahl.global/v1
+  - Endpoints: GET /v1/models (public), POST /v1/chat/completions (Bearer auth, OpenAI-compatible)
+  - Live models: MiniMaxAI/MiniMax-M2.7 (default), zai-org/GLM-5.3-Flash, deepseek-ai/DeepSeek-V4-Flash-0731
+  - Response shape: { choices:[{ message:{ role, content } }] } (identical to OpenAI)
+- Verified the key works: GET /v1/models returned 3 models; a test chat completion returned HTTP 200.
+  - Discovered MiniMax M2.7 prepends a ildi...</think> reasoning trace before the final answer.
+- Added DAHL_API_BASE, DAHL_API_KEY, DAHL_MODEL to .env.
+- Created src/lib/dahl-client.ts: a self-contained OpenAI-compatible client with
+  - dahlChat() — POST /chat/completions with Authorization: Bearer, temperature, max_tokens
+  - Exponential-backoff retries on 5xx/429/network errors; non-retryable DahlApiError for 400/401/402
+  - stripThinkBlock() — removes ildi...</think> chain-of-thought so callers always get the final answer
+- Rewrote src/lib/ai-resume.ts: replaced `import ZAI from 'z-ai-web-dev-sdk'` + `zai.chat.completions.create(...)` with `dahlChat(...)`. Lowered temperature to 0.1 for deterministic JSON. Kept the JSON-extraction fallback regex.
+- No other app code references z-ai-web-dev-sdk (only a doc comment remains).
+- Ran `bun run lint` → clean.
+
+Verification (curl + Agent Browser):
+- curl POST /api/resume with a fresh resume → Dahl parsed: name, email, summary, education, 14 normalized skills, 9 project skills, 3 projects, 3 certs (Meta & AWS verified, freeCodeCamp unverified), experience. ~6s latency.
+- curl GET /api/internships/recommendations → Full Stack Developer Intern = 100% match (JS/TS/React/Node.js/SQL all matched); Web Development = 75% (PHP missing); AI & ML = 67%.
+- Browser: logged in as Priya → Resume AI → "Re-run AI" → toast "Resume analyzed! Skills, projects & certifications validated." → 14 skills / 10 project skills / 3 projects / 3 certs re-rendered from the Dahl parse.
+- No console errors or warnings.
+
+Stage Summary:
+- AI backend fully migrated from z-ai-web-dev-sdk to Dahl Inference (OpenAI-compatible). Config lives in .env (DAHL_API_KEY, DAHL_API_BASE, DAHL_MODEL).
+- The resume AI parser, recommendations, and applications match-score computation all run on the Dahl MiniMax M2.7 model now.
+- Think-block stripping handles MiniMax's reasoning trace so JSON parsing stays robust.
