@@ -45,7 +45,12 @@ const FEATURES = [
 ]
 
 export function HomeSection() {
-  const { setPage, user } = useAppStore()
+  const { setPage, role, user } = useAppStore()
+  const primaryCta = role === 'company'
+    ? { label: 'Post an internship', page: 'company-post' as const }
+    : user
+      ? { label: 'Analyze my resume', page: 'resume' as const }
+      : { label: 'Get Started', page: 'auth' as const }
 
   return (
     <div className="animate-section">
@@ -67,19 +72,21 @@ export function HomeSection() {
             <Button
               size="lg"
               className="bg-brand hover:bg-brand-deep text-white"
-              onClick={() => setPage(user ? 'resume' : 'auth')}
+              onClick={() => setPage(primaryCta.page)}
             >
-              <FileText className="h-4 w-4 mr-2" />
-              {user ? 'Analyze my resume' : 'Get Started'}
+              {role === 'company' ? <Briefcase className="h-4 w-4 mr-2" /> : <FileText className="h-4 w-4 mr-2" />}
+              {primaryCta.label}
             </Button>
-            <Button
-              size="lg"
-              variant="outline"
-              className="border-brand text-brand hover:bg-brand hover:text-white"
-              onClick={() => setPage('internships')}
-            >
-              Explore Internships
-            </Button>
+            {role !== 'company' && (
+              <Button
+                size="lg"
+                variant="outline"
+                className="border-brand text-brand hover:bg-brand hover:text-white"
+                onClick={() => setPage('internships')}
+              >
+                Explore Internships
+              </Button>
+            )}
           </div>
 
           {/* How it works strip */}

@@ -1,5 +1,7 @@
 // Shared types used across frontend and backend
 
+export type Role = 'student' | 'company'
+
 export interface AuthUser {
   id: string
   name: string
@@ -7,6 +9,20 @@ export interface AuthUser {
   course: string | null
   college: string | null
 }
+
+export interface CompanyAuthUser {
+  id: string
+  name: string
+  email: string
+  industry: string | null
+  contactPerson: string | null
+  location: string | null
+}
+
+// Union returned by the role-aware /api/auth/me
+export type SessionPrincipal =
+  | { role: 'student'; user: AuthUser }
+  | { role: 'company'; company: CompanyAuthUser }
 
 export interface ParsedProject {
   name: string
@@ -57,6 +73,9 @@ export interface Internship {
   category: string
   skills: string[]
   description: string | null
+  openings: number
+  companyId: string | null
+  postedBy: string
   createdAt: string
 }
 
@@ -74,6 +93,28 @@ export interface Application {
   matchScore: number
   appliedAt: string
   internship: Internship
+}
+
+export interface InternshipNotification {
+  id: string
+  userId: string
+  internshipId: string
+  message: string
+  read: boolean
+  createdAt: string
+  internship: Internship
+}
+
+export interface CompanyInternship extends Internship {
+  applicantCount: number
+}
+
+export interface ParsedJobDescription {
+  skills: string[]
+  category: string
+  stipend: string
+  location: string
+  summary: string
 }
 
 export type ApiResponse<T> = {

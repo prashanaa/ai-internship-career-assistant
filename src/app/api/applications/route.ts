@@ -51,6 +51,9 @@ function rowToApplication(row: {
       category: row.internship.category,
       skills,
       description: row.internship.description,
+      openings: row.internship.openings,
+      companyId: row.internship.companyId,
+      postedBy: row.internship.postedBy,
       createdAt: row.internship.createdAt.toISOString(),
     },
   }

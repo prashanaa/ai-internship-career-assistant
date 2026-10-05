@@ -19,8 +19,11 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  resumes     Resume[]
-  applications Application[]
+  resumes       Resume[]
+  applications  Application[]
+  notifications Notification[]
+
+  @@index([email])
 }
 
 model Resume {
@@ -32,24 +35,47 @@ model Resume {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  user User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
 }
 
-model Internship {
-  id        String   @id @default(cuid())
-  title     String
-  company   String
-  location  String
-  duration  String
-  stipend   String
-  category  String
-  skills    String   // JSON array of required skills
-  description String?
-  createdAt DateTime @default(now())
+model Company {
+  id            String   @id @default(cuid())
+  name          String
+  email         String   @unique
+  password      String
+  industry      String?
+  contactPerson String?
+  location      String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-  applications Application[]
+  internships Internship[]
+
+  @@index([email])
+}
+
+model Internship {
+  id          String   @id @default(cuid())
+  title       String
+  company     String   // display name (from company account or seeded)
+  location    String
+  duration    String
+  stipend     String
+  category    String
+  skills      String   // JSON array of required skills (AI-extracted filters)
+  description String?
+  openings    Int      @default(1)   // number of posts
+  companyId   String?                // null = seeded/legacy; set for company-posted
+  postedBy    String   @default("seed") // "seed" | "company"
+  createdAt   DateTime @default(now())
+
+  postedByCompany Company?     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  applications    Application[]
+  notifications   Notification[]
+
+  @@index([companyId])
 }
 
 model Application {
@@ -59,6 +85,21 @@ model Application {
   status       String   @default("Applied")
   matchScore   Int      @default(0)
   appliedAt    DateTime @default(now())
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  internship Internship @relation(fields: [internshipId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([internshipId])
+}
+
+model Notification {
+  id           String   @id @default(cuid())
+  userId       String
+  internshipId String
+  message      String
+  read         Boolean  @default(false)
+  createdAt    DateTime @default(now())
 
   user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   internship Internship @relation(fields: [internshipId], references: [id], onDelete: Cascade)

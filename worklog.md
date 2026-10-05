@@ -137,3 +137,48 @@ Verification:
 
 Stage Summary:
 - Resumes can now be uploaded as PDF or DOCX (the formats the user requested). The server extracts plain text with unpdf/mammoth, the user reviews/edits it in the textarea, then the Dahl AI validates skills/projects/certifications. .txt and .md remain supported as fallbacks.
+
+---
+Task ID: 13
+Agent: main (Z.ai Code)
+Task: Add a separate company login where companies post internships (job description, company name, designation, duration, number of openings); AI parses the posted JD into skill filters; students are notified automatically.
+
+Work Log:
+Database:
+- Added Company model (name, email, password, industry, contactPerson, location).
+- Extended Internship with companyId (nullable relation postedByCompany), openings (Int, default 1), postedBy ("seed" | "company"). Renamed the relation to postedByCompany to avoid clashing with the existing `company` String (display name).
+- Added Notification model (userId, internshipId, message, read, createdAt) with relations + indexes.
+
+Types & session:
+- Added Role, CompanyAuthUser, SessionPrincipal, InternshipNotification, CompanyInternship, ParsedJobDescription to src/lib/types.ts; extended Internship with openings/companyId/postedBy.
+- Rewrote src/lib/session.ts: dual-token scheme — `cat_<id>` for students, `cac_<id>` for companies. getSessionPrincipal() decodes the token prefix and looks up the right table (User or Company). Cookie kept as fallback. Added requireSessionCompany().
+- Updated existing student register/login to use renamed helpers (setStudentSession/buildStudentToken).
+
+AI job-description parser:
+- Created src/lib/ai-jd.ts: parseJobDescription() calls the Dahl chat API with a strict JSON schema prompt that extracts { skills[], category, stipend, location, summary } from a free-text job description. The extracted skills become the internship's matching "filters".
+
+Backend routes:
+- POST /api/auth/company/register, POST /api/auth/company/login — return a company sessionToken.
+- GET /api/auth/me — now role-aware: returns { role: 'student', user } or { role: 'company', company }.
+- POST /api/auth/logout — clears the cookie (works for both roles; client clears the localStorage token).
+- GET/POST /api/company/internships — GET lists the company's posted internships with applicant counts; POST accepts { designation, jobDescription, duration, openings, location?, stipend? }, runs the AI JD parser, creates the Internship (postedBy='company', skills = AI-extracted filters), and creates a Notification row for EVERY student ("New internship: … — N openings. M skill filters detected by AI.").
+- GET/PATCH /api/notifications — GET lists a student's notifications (with internship included); PATCH { all:true } or { id } marks as read.
+- Updated the existing internships GET/recommendations and applications mappings to include openings/companyId/postedBy.
+
+Frontend:
+- Rewrote src/lib/store.ts to be role-aware: tracks role, user, company, notifications, unreadCount. bootstrap() calls role-aware /api/auth/me. pollNotifications() refreshes the unread count every 45s for students.
+- Rewrote src/components/app/sections/auth.tsx: a Student/Company toggle at the top; separate forms (company: name, industry, contactPerson, location); calls the right endpoint; stores the token; sets role.
+- New src/components/app/sections/company-dashboard.tsx: company stats (active listings, total openings, applicants) + recent postings.
+- New src/components/app/sections/company-post.tsx: post-internship form (designation, duration, openings, location, stipend, job description). On submit, shows an "Internship posted & students notified" card with the AI-extracted skill filters as badges + the AI summary.
+- New src/components/app/sections/company-internships.tsx: the company's posted internships with openings, applicant counts, and AI skill filters.
+- New src/components/app/notification-bell.tsx: header bell with unread badge; dropdown lists notifications with "Mark all read" and a "Browse all internships" CTA.
+- Updated src/components/app/header.tsx: role-aware nav (company sees Dashboard / Post Internship / My Internships / Browse All), shows the notification bell for students, shows a Building2/GraduationCap icon + name for the right role. Fixed a React casing bug (displayIcon → DisplayIcon).
+- Updated src/app/page.tsx: routes to company sections when role==='company'; page guard blocks company-only pages for students and vice-versa; starts notification polling for students.
+- Updated home section CTA to be role-aware (company → "Post an internship", student → "Analyze my resume").
+
+Verification:
+- curl: company register → post internship with a full-stack JD → AI extracted 11 skill filters (JavaScript, TypeScript, React, Node.js, SQL, HTML, CSS, Git, REST APIs, Docker, AWS) + category "Web Development" + summary. Student notifications endpoint then returned 1 notification with the full message + internship incl. skills. Recommendations endpoint included the company-posted internship with match score.
+- Agent Browser: registered "DataNest Analytics" (company) → dashboard → Post Internship → filled designation/duration/openings/JD → "Post & let AI create skill filters" → "Internship posted & students notified" card showing AI-extracted filters (Python, SQL, Power BI, ...) + AI summary. Logged out, logged in as the student → notification bell showed "2 unread" with both company internships ("… — 2 openings. 8 skill filters detected by AI"). Clicked a notification → internships page showed the company-posted roles with "Your match" progress bars and AI summaries. No console errors after the DisplayIcon casing fix. Lint clean.
+
+Stage Summary:
+- Companies now have their own login and can post internships. The Dahl AI parses each posted job description into skill filters that the existing matching engine uses against student resumes. Students are notified (bell + 45s polling + toast) the moment a company posts, and see match scores on the new internships.

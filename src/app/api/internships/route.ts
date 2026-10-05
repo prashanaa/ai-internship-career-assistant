@@ -38,6 +38,9 @@ export async function GET() {
       category: r.category,
       skills: safeParseSkills(r.skills),
       description: r.description,
+      openings: r.openings,
+      companyId: r.companyId,
+      postedBy: r.postedBy,
       createdAt: r.createdAt.toISOString(),
     }))
 

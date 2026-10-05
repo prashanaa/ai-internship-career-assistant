@@ -9,9 +9,10 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { LogOut, Menu, User2 } from 'lucide-react'
+import { LogOut, Menu, Building2, GraduationCap } from 'lucide-react'
+import { NotificationBell } from '@/components/app/notification-bell'
 
-const NAV: Array<{ id: PageView; label: string }> = [
+const STUDENT_NAV: Array<{ id: PageView; label: string }> = [
   { id: 'home', label: 'Home' },
   { id: 'dashboard', label: 'Dashboard' },
   { id: 'resume', label: 'Resume AI' },
@@ -21,13 +22,27 @@ const NAV: Array<{ id: PageView; label: string }> = [
   { id: 'applications', label: 'Applications' },
 ]
 
+const COMPANY_NAV: Array<{ id: PageView; label: string }> = [
+  { id: 'home', label: 'Home' },
+  { id: 'company-dashboard', label: 'Dashboard' },
+  { id: 'company-post', label: 'Post Internship' },
+  { id: 'company-internships', label: 'My Internships' },
+  { id: 'internships', label: 'Browse All' },
+]
+
 export function Header() {
-  const { user, page, setPage, logout } = useAppStore()
+  const { role, user, company, page, setPage, logout } = useAppStore()
   const [open, setOpen] = useState(false)
 
-  const navItems = user
-    ? NAV
-    : [{ id: 'home' as PageView, label: 'Home' }, { id: 'internships' as PageView, label: 'Internships' }, { id: 'roadmap' as PageView, label: 'Roadmap' }]
+  const navItems =
+    role === 'company' ? COMPANY_NAV : role === 'student' ? STUDENT_NAV : [
+      { id: 'home' as PageView, label: 'Home' },
+      { id: 'internships' as PageView, label: 'Internships' },
+      { id: 'roadmap' as PageView, label: 'Roadmap' },
+    ]
+
+  const displayName = role === 'company' ? (company?.name ?? 'Company') : (user?.name ?? '')
+  const DisplayIcon = role === 'company' ? Building2 : GraduationCap
 
   return (
     <header className="bg-brand text-white sticky top-0 z-40 shadow-md">
@@ -64,19 +79,22 @@ export function Header() {
 
           {/* Right side */}
           <div className="flex items-center gap-2 shrink-0">
-            {user ? (
+            {/* Notification bell — students only */}
+            {role === 'student' && <NotificationBell />}
+
+            {(role === 'student' || role === 'company') ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="ghost" size="sm" className="text-white hover:bg-white/10">
-                    <User2 className="h-4 w-4 mr-1.5" />
-                    <span className="hidden sm:inline max-w-[120px] truncate">{user.name}</span>
+                    <DisplayIcon className="h-4 w-4 mr-1.5" />
+                    <span className="hidden sm:inline max-w-[120px] truncate">{displayName}</span>
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem disabled className="text-muted-foreground">
-                    {user.email}
+                  <DropdownMenuItem disabled className="text-muted-foreground capitalize">
+                    {role} · {role === 'company' ? company?.email : user?.email}
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setPage('dashboard')}>
+                  <DropdownMenuItem onClick={() => setPage(role === 'company' ? 'company-dashboard' : 'dashboard')}>
                     Dashboard
                   </DropdownMenuItem>
                   <DropdownMenuItem

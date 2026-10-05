@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { db } from '@/lib/db'
-import { setStudentSession, buildStudentToken } from '@/lib/session'
-import type { ApiResponse, AuthUser } from '@/lib/types'
+import { setCompanySession, buildCompanyToken } from '@/lib/session'
+import type { ApiResponse, CompanyAuthUser } from '@/lib/types'
 
 const LoginSchema = z.object({
   email: z.string().email('Invalid email'),
@@ -22,27 +22,28 @@ export async function POST(req: NextRequest) {
 
     const { email, password } = parsed.data
 
-    const user = await db.user.findUnique({ where: { email } })
-    if (!user || user.password !== password) {
+    const company = await db.company.findUnique({ where: { email } })
+    if (!company || company.password !== password) {
       return NextResponse.json<ApiResponse<null>>(
-        { success: false, error: 'Invalid email or password.' },
+        { success: false, error: 'Invalid company email or password.' },
         { status: 401 }
       )
     }
 
-    await setStudentSession(user.id)
+    await setCompanySession(company.id)
 
-    const authUser: AuthUser = {
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      course: user.course,
-      college: user.college,
+    const companyUser: CompanyAuthUser = {
+      id: company.id,
+      name: company.name,
+      email: company.email,
+      industry: company.industry,
+      contactPerson: company.contactPerson,
+      location: company.location,
     }
 
-    return NextResponse.json<ApiResponse<AuthUser & { sessionToken: string }>>({
+    return NextResponse.json<ApiResponse<CompanyAuthUser & { sessionToken: string }>>({
       success: true,
-      data: { ...authUser, sessionToken: buildStudentToken(user.id) },
+      data: { ...companyUser, sessionToken: buildCompanyToken(company.id) },
     })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Login failed'

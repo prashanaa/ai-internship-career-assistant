@@ -1,11 +1,14 @@
 import { NextResponse } from 'next/server'
-import { getSessionUser } from '@/lib/session'
-import type { ApiResponse, AuthUser } from '@/lib/types'
+import { getSessionPrincipal } from '@/lib/session'
+import type { ApiResponse, SessionPrincipal } from '@/lib/types'
 
 export async function GET() {
-  const user = await getSessionUser()
-  if (!user) {
-    return NextResponse.json<ApiResponse<AuthUser>>({ success: false, error: 'Not authenticated' }, { status: 401 })
+  const principal = await getSessionPrincipal()
+  if (!principal) {
+    return NextResponse.json<ApiResponse<SessionPrincipal>>(
+      { success: false, error: 'Not authenticated' },
+      { status: 401 }
+    )
   }
-  return NextResponse.json<ApiResponse<AuthUser>>({ success: true, data: user })
+  return NextResponse.json<ApiResponse<SessionPrincipal>>({ success: true, data: principal })
 }

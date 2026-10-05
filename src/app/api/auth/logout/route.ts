@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server'
-import { clearSession } from '@/lib/session'
+import { clearSessionCookie } from '@/lib/session'
 import type { ApiResponse } from '@/lib/types'
 
 export async function POST() {
-  await clearSession()
+  await clearSessionCookie()
   return NextResponse.json<ApiResponse<null>>({ success: true })
 }
