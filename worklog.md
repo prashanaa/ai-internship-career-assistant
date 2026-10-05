@@ -112,3 +112,28 @@ Verification:
 Stage Summary:
 - Auth migrated to Bearer-token-in-localStorage (cookie kept as fallback for direct access). The "unauthorized access" error on Analyze with AI is resolved.
 - All client API calls now go through apiFetch() which injects the Bearer header, so authenticated routes work in both direct-browser and iframe-preview contexts.
+
+---
+Task ID: 12
+Agent: main (Z.ai Code)
+Task: Support PDF and DOCX resume uploads (not just .txt/.md).
+
+Work Log:
+- Installed `unpdf` (PDF text extraction, pdf.js-based, Bun/ESM-friendly) and `mammoth` (DOCX → plain text) via `bun add`.
+- Created src/lib/extract-text.ts: extractFileText(buffer, fileName) routes by extension to extractPdf() (unpdf) or extractDocx() (mammoth.extractRawText), with graceful errors for legacy .doc and unsupported formats, plus a warnings array (e.g. scanned-PDF / empty-document notices).
+- Created POST /api/resume/extract: requires auth (Bearer token), accepts multipart/form-data `file`, validates extension + 5 MB size, calls extractFileText, returns { text, method, warnings }. Returns 400 with a helpful message if extracted text < 30 chars.
+- Rewrote the Resume section file handling:
+  - File input now accepts .pdf, .docx, .doc, .txt, .md (with proper MIME types).
+  - Drop zone shows PDF/DOCX/TXT/MD format badges and an "Extracting text from your file…" spinner state.
+  - handleFile() routes .txt/.md to client-side text(), and PDF/DOCX to a multipart POST /api/resume/extract with the Bearer token. Extracted text populates the textarea for review; an "Extracted from {FORMAT}" badge appears above it; the user can edit before analyzing.
+  - "or load a sample resume" still available (loads the built-in sample text).
+- Fixed unpdf API: it requires a Uint8Array, not a Node Buffer — wrapped the buffer as `new Uint8Array(buffer.buffer, byteOffset, byteLength)`.
+
+Verification:
+- Generated real test files via Python (fpdf for PDF, python-docx for DOCX) in /upload/.
+- curl extract: PDF → 200 (1071 chars, method=pdf); DOCX → 200 (method=docx). Full pipeline extract → POST /api/resume → Dahl AI parse: 12 normalized skills, 3 projects, 3 certs (Google & Microsoft verified, Kaggle unverified).
+- Agent Browser: logged in → Resume AI → uploaded sample-resume.pdf → "Extracted from PDF" badge + textarea populated → Analyze with AI → "Resume analyzed!" toast → 12 skills, 7 project skills, 3 projects, certs. Repeated with sample-resume.docx → same result. No console errors.
+- Dev log: POST /api/resume/extract 200 in 459ms, POST /api/resume 200 in 5.7s (Dahl parse). Lint clean.
+
+Stage Summary:
+- Resumes can now be uploaded as PDF or DOCX (the formats the user requested). The server extracts plain text with unpdf/mammoth, the user reviews/edits it in the textarea, then the Dahl AI validates skills/projects/certifications. .txt and .md remain supported as fallbacks.

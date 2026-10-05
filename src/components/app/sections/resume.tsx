@@ -29,6 +29,8 @@ import {
   Mail,
   Phone,
   RefreshCw,
+  FileType,
+  FileCheck2,
 } from 'lucide-react'
 import type { Resume, ApiResponse } from '@/lib/types'
 import { apiFetch } from '@/lib/api'
@@ -72,9 +74,11 @@ Experience
 export function ResumeSection() {
   const { resume, setResume, user, setPage } = useAppStore()
   const [rawText, setRawText] = useState('')
-  const [fileName, setFileName] = useState('resume.txt')
+  const [fileName, setFileName] = useState('resume.pdf')
   const [loading, setLoading] = useState(false)
+  const [extracting, setExtracting] = useState(false)
   const [dragging, setDragging] = useState(false)
+  const [extractMethod, setExtractMethod] = useState<string | null>(null)
 
   const analyze = async (text: string, name: string) => {
     if (!user) {
@@ -109,20 +113,75 @@ export function ResumeSection() {
   }
 
   const handleFile = async (file: File) => {
+    const name = file.name.toLowerCase()
+    const ext = name.split('.').pop() ?? ''
+    const supported = ['pdf', 'docx', 'doc', 'txt', 'md']
+    if (!supported.includes(ext)) {
+      toast.error(`Unsupported format ".${ext}". Please upload a PDF or DOCX file.`)
+      return
+    }
+
     setFileName(file.name)
-    const text = await file.text()
-    setRawText(text)
-    toast.info(`Loaded "${file.name}". Click Analyze to validate with AI.`)
+    setExtractMethod(null)
+
+    // Plain text formats — read directly on the client (no server round-trip)
+    if (ext === 'txt' || ext === 'md') {
+      try {
+        const text = await file.text()
+        setRawText(text)
+        setExtractMethod(ext)
+        toast.info(`Loaded "${file.name}". Review the text, then click Analyze with AI.`)
+      } catch {
+        toast.error('Could not read the text file.')
+      }
+      return
+    }
+
+    // PDF / DOCX — upload to the server for text extraction
+    if (!user) {
+      toast.error('Please sign in to upload a resume file.')
+      setPage('auth')
+      return
+    }
+    setExtracting(true)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      // Use the apiFetch token helper but send multipart, so attach the header manually
+      const { getToken } = await import('@/lib/api')
+      const token = getToken()
+      const res = await fetch('/api/resume/extract', {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: formData,
+      })
+      const data = await res.json()
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to extract text from file')
+      }
+      setRawText(data.data.text)
+      setExtractMethod(data.data.method)
+      const warn = data.data.warnings?.length
+        ? ` (${data.data.warnings.join('; ')})`
+        : ''
+      toast.success(
+        `Extracted text from "${file.name}" (${data.data.method.toUpperCase()}).${warn} Review and click Analyze with AI.`
+      )
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Extraction failed')
+    } finally {
+      setExtracting(false)
+    }
   }
 
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault()
     setDragging(false)
     const file = e.dataTransfer.files?.[0]
-    if (file && (file.type.startsWith('text/') || file.name.endsWith('.txt') || file.name.endsWith('.md'))) {
+    if (file) {
       void handleFile(file)
     } else {
-      toast.error('Please drop a .txt or .md file. (PDF extraction requires paste.)')
+      toast.error('Please drop a PDF or DOCX file.')
     }
   }
 
@@ -134,8 +193,10 @@ export function ResumeSection() {
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-brand">Resume AI Analysis</h1>
           <p className="mt-2 text-muted-foreground max-w-2xl mx-auto">
-            Paste your resume (or drop a .txt file). Our AI validates your skills, projects and
-            certifications and turns them into reusable data for internship matching.
+            Upload your resume as a <span className="font-semibold text-brand">PDF</span> or{' '}
+            <span className="font-semibold text-brand">DOCX</span> file (or paste the text). Our AI
+            validates your skills, projects and certifications and turns them into reusable data for
+            internship matching.
           </p>
         </div>
 
@@ -158,39 +219,62 @@ export function ResumeSection() {
               }}
               onDragLeave={() => setDragging(false)}
               onDrop={onDrop}
-              className={`rounded-lg border-2 border-dashed p-4 text-center transition ${
+              className={`rounded-lg border-2 border-dashed p-5 text-center transition ${
                 dragging ? 'border-brand bg-brand/5' : 'border-brand/30'
               }`}
             >
-              <Upload className="h-6 w-6 mx-auto text-brand/70" />
-              <p className="mt-2 text-sm text-muted-foreground">
-                Drag &amp; drop a <code className="text-brand">.txt</code> / <code className="text-brand">.md</code> resume, or
-              </p>
-              <label className="mt-2 inline-block">
-                <Input
-                  type="file"
-                  accept=".txt,.md,text/plain,text/markdown"
-                  className="hidden"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0]
-                    if (f) void handleFile(f)
-                  }}
-                />
-                <span className="inline-flex cursor-pointer items-center rounded-md bg-brand/10 px-3 py-1.5 text-sm font-medium text-brand hover:bg-brand/20">
-                  Choose file
-                </span>
-              </label>
-              <button
-                type="button"
-                className="ml-2 text-xs text-brand underline"
-                onClick={() => {
-                  setRawText(SAMPLE_RESUME)
-                  setFileName('sample-resume.txt')
-                  toast.info('Sample resume loaded — click Analyze.')
-                }}
-              >
-                or load a sample resume
-              </button>
+              {extracting ? (
+                <>
+                  <Loader2 className="h-7 w-7 mx-auto text-brand animate-spin" />
+                  <p className="mt-2 text-sm font-medium text-brand">
+                    Extracting text from your file…
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Reading the document and converting it to plain text for AI analysis.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <FileType className="h-7 w-7 mx-auto text-brand/70" />
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    Drag &amp; drop your resume, or
+                  </p>
+                  <div className="mt-1 flex flex-wrap items-center justify-center gap-1.5">
+                    <Badge variant="outline" className="border-brand/40 text-brand">PDF</Badge>
+                    <Badge variant="outline" className="border-brand/40 text-brand">DOCX</Badge>
+                    <Badge variant="outline" className="border-brand/30 text-brand/70">TXT</Badge>
+                    <Badge variant="outline" className="border-brand/30 text-brand/70">MD</Badge>
+                  </div>
+                  <label className="mt-3 inline-block">
+                    <Input
+                      type="file"
+                      accept=".pdf,.docx,.doc,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown"
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0]
+                        if (f) void handleFile(f)
+                        e.target.value = '' // allow re-uploading the same file
+                      }}
+                    />
+                    <span className="inline-flex cursor-pointer items-center rounded-md bg-brand px-4 py-1.5 text-sm font-medium text-white hover:bg-brand-deep">
+                      <Upload className="h-4 w-4 mr-1.5" />
+                      Choose file
+                    </span>
+                  </label>
+                  <button
+                    type="button"
+                    className="ml-2 text-xs text-brand underline"
+                    onClick={() => {
+                      setRawText(SAMPLE_RESUME)
+                      setFileName('sample-resume.pdf')
+                      setExtractMethod('sample')
+                      toast.info('Sample resume loaded — click Analyze with AI.')
+                    }}
+                  >
+                    or load a sample resume
+                  </button>
+                </>
+              )}
             </div>
 
             <div className="space-y-1.5">
@@ -199,22 +283,36 @@ export function ResumeSection() {
                 id="fileName"
                 value={fileName}
                 onChange={(e) => setFileName(e.target.value)}
-                placeholder="resume.txt"
+                placeholder="resume.pdf"
               />
             </div>
 
             <div className="space-y-1.5">
-              <Label htmlFor="rawText">Resume content (paste your resume text here)</Label>
+              <div className="flex items-center justify-between gap-2">
+                <Label htmlFor="rawText">
+                  Resume content
+                </Label>
+                {extractMethod && rawText.trim().length > 0 && (
+                  <span className="inline-flex items-center gap-1 text-xs text-emerald-700 font-medium">
+                    <FileCheck2 className="h-3.5 w-3.5" />
+                    Extracted from {extractMethod.toUpperCase()}
+                  </span>
+                )}
+              </div>
               <Textarea
                 id="rawText"
                 value={rawText}
-                onChange={(e) => setRawText(e.target.value)}
-                placeholder="Paste the full text of your resume here..."
+                onChange={(e) => {
+                  setRawText(e.target.value)
+                  setExtractMethod(null)
+                }}
+                placeholder="Upload a PDF/DOCX above, or paste the full text of your resume here..."
                 className="min-h-[220px] custom-scroll font-mono text-sm"
               />
-              <p className="text-xs text-muted-foreground">
-                {rawText.length.toLocaleString()} / 12,000 characters
-              </p>
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span>Review the extracted text before analyzing — you can edit it.</span>
+                <span>{rawText.length.toLocaleString()} / 12,000 characters</span>
+              </div>
             </div>
 
             <Button
