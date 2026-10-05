@@ -1,0 +1,63 @@
+// Centralized fetch wrapper that injects the session token as a Bearer header.
+// Used by all client-side calls to authenticated API routes. This avoids
+// reliance on cookies, which are blocked in cross-origin iframe previews
+// (third-party cookie restrictions in modern browsers).
+
+const TOKEN_KEY = 'careerassist_token'
+
+export function getToken(): string | null {
+  if (typeof window === 'undefined') return null
+  try {
+    return window.localStorage.getItem(TOKEN_KEY)
+  } catch {
+    return null
+  }
+}
+
+export function setToken(token: string): void {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(TOKEN_KEY, token)
+  } catch {
+    // ignore storage errors (private mode, etc.)
+  }
+}
+
+export function clearToken(): void {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.removeItem(TOKEN_KEY)
+  } catch {
+    // ignore
+  }
+}
+
+interface ApiFetchOptions extends RequestInit {
+  // If true, send the Authorization header even for GET requests (default: true)
+  auth?: boolean
+}
+
+export async function apiFetch<T = unknown>(
+  url: string,
+  opts: ApiFetchOptions = {}
+): Promise<T> {
+  const { auth = true, headers: customHeaders, ...rest } = opts
+  const headers: Record<string, string> = {
+    ...(customHeaders as Record<string, string> | undefined),
+  }
+
+  // Always set JSON content-type for requests with a body
+  if (rest.body && !headers['Content-Type']) {
+    headers['Content-Type'] = 'application/json'
+  }
+
+  if (auth) {
+    const token = getToken()
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`
+    }
+  }
+
+  const res = await fetch(url, { ...rest, headers })
+  return (await res.json()) as T
+}

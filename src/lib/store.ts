@@ -1,5 +1,6 @@
 import { create } from 'zustand'
-import type { AuthUser, Resume, Application } from '@/lib/types'
+import type { AuthUser, Resume, Application, ApiResponse } from '@/lib/types'
+import { apiFetch, setToken, clearToken, getToken } from '@/lib/api'
 
 export type PageView =
   | 'home'
@@ -38,7 +39,6 @@ export const useAppStore = create<AppState>((set) => ({
   setApplications: (apps) => set({ applications: apps }),
   addApplication: (app) =>
     set((s) => {
-      // avoid duplicates by internshipId
       if (s.applications.some((a) => a.internshipId === app.internshipId)) {
         return s
       }
@@ -47,37 +47,39 @@ export const useAppStore = create<AppState>((set) => ({
   setPage: (page) => set({ page }),
   setAuthMode: (authMode) => set({ authMode }),
   logout: async () => {
-    await fetch('/api/auth/logout', { method: 'POST' })
+    try {
+      await apiFetch('/api/auth/logout', { method: 'POST' })
+    } catch {
+      // ignore network errors on logout
+    }
+    clearToken()
     set({ user: null, resume: null, applications: [], page: 'home' })
   },
   bootstrap: async () => {
+    // Only attempt bootstrap if we have a token in localStorage
+    if (!getToken()) {
+      set({ user: null, resume: null, applications: [] })
+      return
+    }
     try {
-      const res = await fetch('/api/auth/me')
-      if (res.ok) {
-        const data = await res.json()
-        if (data.success && data.data) {
-          set({ user: data.data })
-          // load resume + applications in parallel
-          const [resumeRes, appsRes] = await Promise.all([
-            fetch('/api/resume'),
-            fetch('/api/applications'),
-          ])
-          if (resumeRes.ok) {
-            const rd = await resumeRes.json()
-            if (rd.success && rd.data) {
-              set({ resume: rd.data })
-            }
-          }
-          if (appsRes.ok) {
-            const ad = await appsRes.json()
-            if (ad.success && ad.data) {
-              set({ applications: ad.data })
-            }
-          }
+      const me = await apiFetch<ApiResponse<AuthUser>>('/api/auth/me')
+      if (me.success && me.data) {
+        set({ user: me.data })
+        const [resumeRes, appsRes] = await Promise.all([
+          apiFetch<ApiResponse<Resume>>('/api/resume').catch(() => null),
+          apiFetch<ApiResponse<Application[]>>('/api/applications').catch(() => null),
+        ])
+        if (resumeRes?.success && resumeRes.data) {
+          set({ resume: resumeRes.data })
         }
+        if (appsRes?.success && appsRes.data) {
+          set({ applications: appsRes.data })
+        }
+      } else {
+        clearToken()
       }
     } catch {
-      // ignore
+      // ignore — user stays logged out
     }
   },
 }))

@@ -24,8 +24,9 @@ import {
   XCircle,
   LogIn,
 } from 'lucide-react'
-import type { InternshipRecommendation } from '@/lib/types'
+import type { InternshipRecommendation, ApiResponse, Application } from '@/lib/types'
 import { MatchProgress } from '@/components/app/match-badge'
+import { apiFetch } from '@/lib/api'
 
 export function InternshipsSection() {
   const { user, resume, applications, addApplication, setPage } = useAppStore()
@@ -40,10 +41,9 @@ export function InternshipsSection() {
     ;(async () => {
       setLoading(true)
       try {
-        const res = await fetch('/api/internships')
-        const data = await res.json()
+        const data = await apiFetch<ApiResponse<InternshipRecommendation[]>>('/api/internships')
         if (!cancelled && data.success) {
-          setItems(data.data)
+          setItems(data.data ?? [])
         }
       } catch {
         if (!cancelled) toast.error('Failed to load internships')
@@ -86,13 +86,11 @@ export function InternshipsSection() {
     }
     setApplyingId(i.id)
     try {
-      const res = await fetch('/api/applications', {
+      const data = await apiFetch<ApiResponse<Application>>('/api/applications', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ internshipId: i.id }),
       })
-      const data = await res.json()
-      if (!res.ok || !data.success) {
+      if (!data.success || !data.data) {
         throw new Error(data.error || 'Failed to apply')
       }
       addApplication(data.data)

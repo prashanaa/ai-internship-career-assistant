@@ -20,8 +20,9 @@ import {
   CheckCircle2,
   Trophy,
 } from 'lucide-react'
-import type { InternshipRecommendation } from '@/lib/types'
+import type { InternshipRecommendation, ApiResponse } from '@/lib/types'
 import { MatchProgress } from '@/components/app/match-badge'
+import { apiFetch } from '@/lib/api'
 
 export function SkillsSection() {
   const { user, resume, setPage } = useAppStore()
@@ -33,15 +34,12 @@ export function SkillsSection() {
     ;(async () => {
       setLoading(true)
       try {
-        const res = await fetch('/api/internships/recommendations')
-        const data = await res.json()
+        const data = await apiFetch<ApiResponse<InternshipRecommendation[]>>(
+          '/api/internships/recommendations'
+        )
         if (!cancelled) {
-          if (data.success) setItems(data.data)
-          else if (res.status === 400) {
-            // resume missing — that's fine
-          } else {
-            toast.error(data.error || 'Failed to load skill analysis')
-          }
+          if (data.success) setItems(data.data ?? [])
+          // 400 (no resume yet) is a normal state — no toast
         }
       } catch {
         if (!cancelled) toast.error('Failed to load skill analysis')

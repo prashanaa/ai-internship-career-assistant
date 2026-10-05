@@ -14,7 +14,8 @@ import {
 } from '@/components/ui/card'
 import { toast } from 'sonner'
 import { Loader2, GraduationCap } from 'lucide-react'
-import type { AuthUser } from '@/lib/types'
+import type { AuthUser, ApiResponse, Resume, Application } from '@/lib/types'
+import { apiFetch, setToken } from '@/lib/api'
 
 export function AuthSection() {
   const { authMode, setAuthMode, setUser, setPage, setResume, setApplications } = useAppStore()
@@ -37,31 +38,27 @@ export function AuthSection() {
       const payload = isRegister
         ? form
         : { email: form.email, password: form.password }
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
-      const data = await res.json()
-      if (!res.ok || !data.success) {
+      const data = await apiFetch<ApiResponse<AuthUser & { sessionToken: string }>>(
+        endpoint,
+        { method: 'POST', body: JSON.stringify(payload), auth: false }
+      )
+      if (!data.success || !data.data) {
         throw new Error(data.error || 'Something went wrong')
       }
-      setUser(data.data as AuthUser)
+      // Store the session token in localStorage (works in iframe previews
+      // where SameSite=Lax cookies are blocked as third-party).
+      setToken(data.data.sessionToken)
+      const { sessionToken: _token, ...authUser } = data.data
+      setUser(authUser)
       toast.success(isRegister ? 'Account created!' : 'Welcome back!')
 
-      // load resume + applications
+      // load resume + applications (now with the Bearer token attached)
       const [resumeRes, appsRes] = await Promise.all([
-        fetch('/api/resume'),
-        fetch('/api/applications'),
+        apiFetch<ApiResponse<Resume>>('/api/resume').catch(() => null),
+        apiFetch<ApiResponse<Application[]>>('/api/applications').catch(() => null),
       ])
-      if (resumeRes.ok) {
-        const rd = await resumeRes.json()
-        if (rd.success && rd.data) setResume(rd.data)
-      }
-      if (appsRes.ok) {
-        const ad = await appsRes.json()
-        if (ad.success && ad.data) setApplications(ad.data)
-      }
+      if (resumeRes?.success && resumeRes.data) setResume(resumeRes.data)
+      if (appsRes?.success && appsRes.data) setApplications(appsRes.data)
       setPage('dashboard')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Authentication failed')

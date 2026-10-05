@@ -84,3 +84,31 @@ Stage Summary:
 - AI backend fully migrated from z-ai-web-dev-sdk to Dahl Inference (OpenAI-compatible). Config lives in .env (DAHL_API_KEY, DAHL_API_BASE, DAHL_MODEL).
 - The resume AI parser, recommendations, and applications match-score computation all run on the Dahl MiniMax M2.7 model now.
 - Think-block stripping handles MiniMax's reasoning trace so JSON parsing stays robust.
+
+---
+Task ID: 11
+Agent: main (Z.ai Code)
+Task: Fix "unauthorized access" error when clicking Analyze with AI in the Resume AI section.
+
+Root cause:
+- The preview panel renders the app inside a cross-origin iframe. Modern browsers block SameSite=Lax cookies as third-party in that context, so the session cookie set during register/login was never stored → every authenticated request returned 401. (Direct localhost:3000 access worked because cookies were first-party there.)
+
+Work Log:
+- Diagnosed via dev log: POST /api/auth/register 200 succeeded, but the immediately-following GET /api/resume and GET /api/applications returned 401, and POST /api/resume (Analyze with AI) returned 401. curl tests through the gateway worked (cookies forwarded), proving the issue was browser-side third-party cookie blocking in the iframe preview.
+- Switched auth from cookie-only to a Bearer token stored in localStorage (immune to third-party cookie restrictions):
+  1. Created src/lib/api.ts: apiFetch() helper that auto-attaches `Authorization: Bearer <token>` from localStorage; plus setToken/getToken/clearToken helpers.
+  2. Rewrote src/lib/session.ts: getSessionUser() now reads the Bearer token from the Authorization header FIRST (works in iframe), then falls back to the session cookie (works in direct browser access). Added buildSessionToken() which wraps the user id with a `cat_` prefix.
+  3. Updated /api/auth/register and /api/auth/login to return a `sessionToken` field in the response alongside the user.
+  4. Updated src/lib/store.ts: bootstrap() checks for a localStorage token before calling /api/auth/me; logout() clears the token.
+  5. Updated src/components/app/sections/auth.tsx: stores the returned sessionToken in localStorage after register/login, then loads resume+applications via apiFetch.
+  6. Updated src/components/app/sections/resume.tsx, internships.tsx, skills.tsx, dashboard.tsx to use apiFetch for all API calls (auto-attaches the Bearer token).
+- Ran `bun run lint` → clean.
+
+Verification:
+- curl through the Caddy gateway (port 81) with NO cookies, using only `Authorization: Bearer cat_...`: POST /api/resume → 200, GET /api/auth/me → 200. Confirms the Bearer token works in the exact iframe-preview network path.
+- Agent Browser: cleared all cookies + localStorage → registered "Final Test" → localStorage now contains `careerassist_token: cat_...` → dashboard "Welcome, Final" → Resume AI → load sample → Analyze with AI → toast "Resume analyzed!" → results render (skills, projects, certs). No console errors.
+- Dev log: GET /api/resume 200, GET /api/applications 200, POST /api/resume 200 in 7.6s (Dahl parse). All 200s.
+
+Stage Summary:
+- Auth migrated to Bearer-token-in-localStorage (cookie kept as fallback for direct access). The "unauthorized access" error on Analyze with AI is resolved.
+- All client API calls now go through apiFetch() which injects the Bearer header, so authenticated routes work in both direct-browser and iframe-preview contexts.

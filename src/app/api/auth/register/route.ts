@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { db } from '@/lib/db'
-import { setSession } from '@/lib/session'
+import { setSession, buildSessionToken } from '@/lib/session'
 import type { ApiResponse, AuthUser } from '@/lib/types'
 
 const RegisterSchema = z.object({
@@ -47,7 +47,10 @@ export async function POST(req: NextRequest) {
       college: user.college,
     }
 
-    return NextResponse.json<ApiResponse<AuthUser>>({ success: true, data: authUser })
+    return NextResponse.json<ApiResponse<AuthUser & { sessionToken: string }>>({
+      success: true,
+      data: { ...authUser, sessionToken: buildSessionToken(user.id) },
+    })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Registration failed'
     return NextResponse.json<ApiResponse<null>>({ success: false, error: message }, { status: 500 })

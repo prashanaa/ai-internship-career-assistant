@@ -20,6 +20,8 @@ import {
   Award,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { apiFetch } from '@/lib/api'
+import type { InternshipRecommendation, ApiResponse } from '@/lib/types'
 
 export function DashboardSection() {
   const { user, resume, applications, setPage } = useAppStore()
@@ -27,10 +29,9 @@ export function DashboardSection() {
 
   useEffect(() => {
     let cancelled = false
-    fetch('/api/internships')
-      .then((r) => r.json())
+    apiFetch<ApiResponse<InternshipRecommendation[]>>('/api/internships')
       .then((d) => {
-        if (!cancelled && d.success) setInternshipCount(d.data.length)
+        if (!cancelled && d.success) setInternshipCount(d.data?.length ?? 0)
       })
       .catch(() => {})
     return () => {

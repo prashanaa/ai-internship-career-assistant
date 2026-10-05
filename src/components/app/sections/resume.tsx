@@ -30,7 +30,8 @@ import {
   Phone,
   RefreshCw,
 } from 'lucide-react'
-import type { Resume } from '@/lib/types'
+import type { Resume, ApiResponse } from '@/lib/types'
+import { apiFetch } from '@/lib/api'
 
 const SAMPLE_RESUME = `Nandha Kumar
 Email: nandha.kumar@example.com | Phone: +91-9876543210
@@ -87,16 +88,14 @@ export function ResumeSection() {
     }
     setLoading(true)
     try {
-      const res = await fetch('/api/resume', {
+      const data = await apiFetch<ApiResponse<Resume>>('/api/resume', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ rawText: text, fileName: name }),
       })
-      const data = await res.json()
-      if (!res.ok || !data.success) {
+      if (!data.success || !data.data) {
         throw new Error(data.error || 'AI analysis failed')
       }
-      setResume(data.data as Resume)
+      setResume(data.data)
       toast.success('Resume analyzed! Skills, projects & certifications validated.')
       // smooth scroll to results
       setTimeout(() => {
