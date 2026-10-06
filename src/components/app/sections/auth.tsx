@@ -122,15 +122,22 @@ export function AuthSection() {
         })
         if (error) {
           const msg = error.message.toLowerCase()
+          // Supabase returns "Invalid login credentials" for: wrong password,
+          // non-existent user, AND unconfirmed email (to prevent enumeration).
+          // Treat it as potentially-unconfirmed → resend the OTP. If the email
+          // is registered but unverified, a new code is sent; if not registered,
+          // no email goes out (and the user should Register instead).
           if (
+            msg.includes('invalid login credentials') ||
             msg.includes('not confirmed') ||
             msg.includes('email_not_confirmed') ||
             error.code === 'email_not_confirmed'
           ) {
-            // Resend the signup OTP and prompt for it.
             await supabaseBrowser.auth.resend({ email: studentForm.email, type: 'signup' })
             setPendingOtp({ email: studentForm.email, role: 'student' })
-            toast.info('Please verify your email first — we sent a new OTP.')
+            toast.info(
+              'If this email is registered but unverified, we sent a new OTP. If you don\'t receive it, click "Use a different account" and Register.'
+            )
             return
           }
           throw new Error(error.message)
@@ -174,13 +181,16 @@ export function AuthSection() {
         if (error) {
           const msg = error.message.toLowerCase()
           if (
+            msg.includes('invalid login credentials') ||
             msg.includes('not confirmed') ||
             msg.includes('email_not_confirmed') ||
             error.code === 'email_not_confirmed'
           ) {
             await supabaseBrowser.auth.resend({ email: companyForm.email, type: 'signup' })
             setPendingOtp({ email: companyForm.email, role: 'company' })
-            toast.info('Please verify your company email first — we sent a new OTP.')
+            toast.info(
+              'If this email is registered but unverified, we sent a new OTP. If you don\'t receive it, click "Use a different account" and Register.'
+            )
             return
           }
           throw new Error(error.message)
