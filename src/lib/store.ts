@@ -8,7 +8,8 @@ import type {
   ApiResponse,
   SessionPrincipal,
 } from '@/lib/types'
-import { apiFetch, setToken, clearToken, getToken } from '@/lib/api'
+import { apiFetch } from '@/lib/api'
+import { supabaseBrowser } from '@/lib/supabase-browser'
 
 export type PageView =
   | 'home'
@@ -19,7 +20,6 @@ export type PageView =
   | 'skills'
   | 'roadmap'
   | 'applications'
-  // Company-only views
   | 'company-dashboard'
   | 'company-post'
   | 'company-internships'
@@ -27,7 +27,6 @@ export type PageView =
 interface PendingOtp {
   email: string
   role: 'student' | 'company'
-  devOtp?: string
 }
 
 interface AppState {
@@ -99,11 +98,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   setPendingOtp: (pendingOtp) => set({ pendingOtp }),
   logout: async () => {
     try {
-      await apiFetch('/api/auth/logout', { method: 'POST' })
+      await supabaseBrowser.auth.signOut()
     } catch {
       // ignore
     }
-    clearToken()
     set({
       role: null,
       user: null,
@@ -117,42 +115,30 @@ export const useAppStore = create<AppState>((set, get) => ({
     })
   },
   bootstrap: async () => {
-    if (!getToken()) {
+    // 1. Is there a Supabase session?
+    const {
+      data: { session },
+    } = await supabaseBrowser.auth.getSession()
+    if (!session) {
       set({ role: null, user: null, company: null, resume: null, applications: [], pendingOtp: null })
       return
     }
+
+    // 2. Try to fetch the local profile. If it doesn't exist yet (just verified
+    //    OTP, profile not created), create it.
     try {
-      const me = await apiFetch<ApiResponse<SessionPrincipal>>('/api/auth/me')
-      if (!me.success || !me.data) {
-        clearToken()
-        set({ role: null, user: null, company: null })
-        return
+      let me = await apiFetch<ApiResponse<SessionPrincipal>>('/api/auth/me')
+      if ((!me.success || !me.data) && session) {
+        // Profile row missing → create it now (idempotent).
+        me = await apiFetch<ApiResponse<SessionPrincipal>>('/api/auth/profile', {
+          method: 'POST',
+          body: JSON.stringify({}),
+        })
       }
-      if (me.data.role === 'student') {
-        const u = me.data.user
-        set({ role: 'student', user: u, company: null })
-        // If email isn't verified yet, keep the user on the auth page to enter OTP
-        if (!u.emailVerified) {
-          set({ pendingOtp: { email: u.email, role: 'student' }, page: 'auth' })
-          return
-        }
-        const [resumeRes, appsRes, notifRes] = await Promise.all([
-          apiFetch<ApiResponse<Resume>>('/api/resume').catch(() => null),
-          apiFetch<ApiResponse<Application[]>>('/api/applications').catch(() => null),
-          apiFetch<ApiResponse<InternshipNotification[]>>('/api/notifications').catch(() => null),
-        ])
-        if (resumeRes?.success && resumeRes.data) set({ resume: resumeRes.data })
-        if (appsRes?.success && appsRes.data) set({ applications: appsRes.data })
-        if (notifRes?.success && notifRes.data) {
-          set({ notifications: notifRes.data, unreadCount: notifRes.data.filter((n) => !n.read).length })
-        }
+      if (me.success && me.data) {
+        await applyPrincipal(me.data, set)
       } else {
-        const c = me.data.company
-        set({ role: 'company', company: c, user: null })
-        if (!c.emailVerified) {
-          set({ pendingOtp: { email: c.email, role: 'company' }, page: 'auth' })
-          return
-        }
+        set({ role: null, user: null, company: null })
       }
     } catch {
       // ignore
@@ -162,15 +148,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     const { role } = get()
     if (role !== 'student') return
     try {
-      const data = await apiFetch<ApiResponse<InternshipNotification[]>>('/api/notifications?unread=1')
+      const data = await apiFetch<ApiResponse<InternshipNotification[]>>(
+        '/api/notifications?unread=1'
+      )
       if (data.success && data.data) {
-        // Determine if there are NEW notifications since last poll
         set((s) => {
           const prevIds = new Set(s.notifications.map((n) => n.id))
           const newOnes = data.data!.filter((n) => !prevIds.has(n.id))
           return {
             unreadCount: data.data!.length,
-            // keep read state of existing; add new ones on top
             notifications: [
               ...newOnes,
               ...s.notifications.filter((n) => !n.read || prevIds.has(n.id)),
@@ -183,3 +169,28 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 }))
+
+// Helper: apply a SessionPrincipal to the store + load student extras.
+async function applyPrincipal(
+  principal: SessionPrincipal,
+  set: (partial: Partial<AppState>) => void
+) {
+  if (principal.role === 'student') {
+    set({ role: 'student', user: principal.user, company: null, pendingOtp: null })
+    const [resumeRes, appsRes, notifRes] = await Promise.all([
+      apiFetch<ApiResponse<Resume>>('/api/resume').catch(() => null),
+      apiFetch<ApiResponse<Application[]>>('/api/applications').catch(() => null),
+      apiFetch<ApiResponse<InternshipNotification[]>>('/api/notifications').catch(() => null),
+    ])
+    const patch: Partial<AppState> = {}
+    if (resumeRes?.success && resumeRes.data) patch.resume = resumeRes.data
+    if (appsRes?.success && appsRes.data) patch.applications = appsRes.data
+    if (notifRes?.success && notifRes.data) {
+      patch.notifications = notifRes.data
+      patch.unreadCount = notifRes.data.filter((n) => !n.read).length
+    }
+    set(patch)
+  } else {
+    set({ role: 'company', company: principal.company, user: null, pendingOtp: null })
+  }
+}

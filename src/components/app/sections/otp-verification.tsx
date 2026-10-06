@@ -6,9 +6,10 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { toast } from 'sonner'
-import { Loader2, ShieldCheck, Mail, ArrowLeft, KeyRound, Sparkles } from 'lucide-react'
-import type { ApiResponse } from '@/lib/types'
-import { apiFetch, setToken } from '@/lib/api'
+import { Loader2, ShieldCheck, Mail, ArrowLeft, KeyRound } from 'lucide-react'
+import type { ApiResponse, SessionPrincipal } from '@/lib/types'
+import { apiFetch } from '@/lib/api'
+import { supabaseBrowser } from '@/lib/supabase-browser'
 
 export function OtpVerification() {
   const { pendingOtp, setPendingOtp, setRole, setUser, setCompany, setPage, logout } = useAppStore()
@@ -17,34 +18,24 @@ export function OtpVerification() {
   const [resendIn, setResendIn] = useState(0)
   const inputsRef = useRef<Array<HTMLInputElement | null>>([])
 
-  // Auto-focus the first box on mount
   useEffect(() => {
     inputsRef.current[0]?.focus()
   }, [])
 
-  // Resend cooldown countdown
   useEffect(() => {
     if (resendIn <= 0) return
     const t = setTimeout(() => setResendIn((s) => Math.max(0, s - 1)), 1000)
     return () => clearTimeout(t)
   }, [resendIn])
 
-  // If dev OTP becomes available, pre-fill (only in dev mode, no SMTP)
-  useEffect(() => {
-    if (pendingOtp?.devOtp && pendingOtp.devOtp.length === 6) {
-      setDigits(pendingOtp.devOtp.split(''))
-    }
-  }, [pendingOtp?.devOtp])
-
   if (!pendingOtp) return null
 
-  const { email, role, devOtp } = pendingOtp
+  const { email, role } = pendingOtp
   const code = digits.join('')
 
   const setDigit = (i: number, val: string) => {
     const clean = val.replace(/\D/g, '')
     if (clean.length > 1) {
-      // paste: distribute across boxes
       const arr = clean.slice(0, 6).split('')
       const next = ['', '', '', '', '', '']
       arr.forEach((d, idx) => (next[idx] = d))
@@ -82,27 +73,36 @@ export function OtpVerification() {
     }
     setLoading(true)
     try {
-      const data = await apiFetch<
-        ApiResponse<
-          | { role: 'student'; user: AuthUserLike; sessionToken: string }
-          | { role: 'company'; company: CompanyAuthLike; sessionToken: string }
-        >
-      >('/api/auth/verify-otp', {
-        method: 'POST',
-        body: JSON.stringify({ email, code, role }),
-        auth: false, // verify establishes a fresh session
+      // Supabase verifyOtp — confirms the email + creates a session.
+      const { data, error } = await supabaseBrowser.auth.verifyOtp({
+        email,
+        token: code,
+        type: 'signup',
       })
-      if (!data.success || !data.data) {
-        throw new Error(data.error || 'Verification failed')
+      if (error) throw new Error(error.message)
+
+      // The access token from the new session lets us create the local profile.
+      const accessToken = data.session?.access_token
+      if (!accessToken) throw new Error('Verification succeeded but no session was created.')
+
+      // Create / fetch the local profile row via Prisma (idempotent).
+      const me = await apiFetch<ApiResponse<SessionPrincipal>>('/api/auth/profile', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${accessToken}` },
+        body: JSON.stringify({}),
+        auth: false, // we attach the token manually above
+      })
+      if (!me.success || !me.data) {
+        throw new Error(me.error || 'Could not create your profile.')
       }
-      setToken(data.data.sessionToken)
-      if (data.data.role === 'student') {
+
+      if (me.data.role === 'student') {
         setRole('student')
-        setUser(data.data.user)
+        setUser(me.data.user)
         setCompany(null)
       } else {
         setRole('company')
-        setCompany(data.data.company)
+        setCompany(me.data.company)
         setUser(null)
       }
       setPendingOtp(null)
@@ -119,18 +119,8 @@ export function OtpVerification() {
     if (resendIn > 0) return
     setLoading(true)
     try {
-      const data = await apiFetch<ApiResponse<{ sent: true; devOtp?: string }>>(
-        '/api/auth/resend-otp',
-        { method: 'POST', body: JSON.stringify({ email, role }), auth: false }
-      )
-      if (!data.success) {
-        if (data.cooldown) setResendIn(Number(data.cooldown))
-        throw new Error(data.error || 'Failed to resend code')
-      }
-      // If dev mode returned a fresh code, update the pending OTP so the hint refreshes
-      if (data.data?.devOtp) {
-        setPendingOtp({ email, role, devOtp: data.data.devOtp })
-      }
+      const { error } = await supabaseBrowser.auth.resend({ email, type: 'signup' })
+      if (error) throw new Error(error.message)
       toast.success('A new code has been sent to your email.')
       setResendIn(30)
       setDigits(['', '', '', '', '', ''])
@@ -157,12 +147,11 @@ export function OtpVerification() {
             </div>
             <CardTitle className="text-brand text-2xl">Verify your email</CardTitle>
             <CardDescription>
-              We sent a 6-digit code to <span className="font-semibold text-brand">{email}</span>.
+              We emailed a 6-digit code to <span className="font-semibold text-brand">{email}</span>.
               Enter it below to activate your {role === 'company' ? 'company' : 'student'} account.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {/* 6-digit input */}
             <div className="flex items-center justify-center gap-2" onPaste={onPaste}>
               {digits.map((d, i) => (
                 <Input
@@ -194,12 +183,9 @@ export function OtpVerification() {
               Verify &amp; continue
             </Button>
 
-            {/* Resend / cooldown */}
             <div className="text-center text-sm">
               {resendIn > 0 ? (
-                <span className="text-muted-foreground">
-                  Resend code in {resendIn}s
-                </span>
+                <span className="text-muted-foreground">Resend code in {resendIn}s</span>
               ) : (
                 <button
                   type="button"
@@ -211,32 +197,6 @@ export function OtpVerification() {
                 </button>
               )}
             </div>
-
-            {/* Dev-mode hint (only shows when SMTP isn't configured) */}
-            {devOtp && (
-              <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-center">
-                <p className="text-xs font-semibold text-amber-800 flex items-center justify-center gap-1">
-                  <Sparkles className="h-3.5 w-3.5" />
-                  Dev mode (SMTP not configured)
-                </p>
-                <p className="mt-1 text-sm text-amber-800">
-                  Your verification code:{' '}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setDigits(devOtp.split(''))
-                      inputsRef.current[5]?.focus()
-                    }}
-                    className="font-mono font-bold text-lg tracking-widest underline decoration-dotted hover:text-amber-900"
-                  >
-                    {devOtp}
-                  </button>
-                </p>
-                <p className="mt-1 text-[11px] text-amber-700/80">
-                  Click the code to auto-fill. In production this arrives via email.
-                </p>
-              </div>
-            )}
 
             <div className="flex items-center justify-center gap-4 text-xs text-muted-foreground">
               <button
@@ -250,30 +210,11 @@ export function OtpVerification() {
 
             <div className="flex items-center justify-center gap-1 text-[11px] text-muted-foreground/70">
               <Mail className="h-3 w-3" />
-              Didn't get it? Check spam, or click resend after 30s.
+              Didn&apos;t get it? Check spam, or click resend after 30s.
             </div>
           </CardContent>
         </Card>
       </div>
     </div>
   )
-}
-
-// Local shape aliases to keep the union typed without importing heavy types
-type AuthUserLike = {
-  id: string
-  name: string
-  email: string
-  course: string | null
-  college: string | null
-  emailVerified: boolean
-}
-type CompanyAuthLike = {
-  id: string
-  name: string
-  email: string
-  industry: string | null
-  contactPerson: string | null
-  location: string | null
-  emailVerified: boolean
 }

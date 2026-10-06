@@ -13,16 +13,10 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { toast } from 'sonner'
-import { Loader2, GraduationCap, Building2, User2 } from 'lucide-react'
-import type {
-  AuthUser,
-  CompanyAuthUser,
-  ApiResponse,
-  Resume,
-  Application,
-  InternshipNotification,
-} from '@/lib/types'
-import { apiFetch, setToken } from '@/lib/api'
+import { Loader2, GraduationCap, Building2 } from 'lucide-react'
+import type { ApiResponse, SessionPrincipal, Resume, Application, InternshipNotification } from '@/lib/types'
+import { apiFetch } from '@/lib/api'
+import { supabaseBrowser } from '@/lib/supabase-browser'
 
 export function AuthSection() {
   const {
@@ -36,8 +30,8 @@ export function AuthSection() {
     setResume,
     setApplications,
     setNotifications,
-    setPendingOtp,
     setPage,
+    setPendingOtp,
   } = useAppStore()
   const [loading, setLoading] = useState(false)
   const [studentForm, setStudentForm] = useState({
@@ -59,56 +53,91 @@ export function AuthSection() {
   const isRegister = authMode === 'register'
   const isCompany = authRole === 'company'
 
+  // After a successful Supabase auth event (verifyOtp / signInWithPassword),
+  // ensure the local Profile row exists, then apply the principal.
+  const ensureProfileAndEnter = async (target: 'dashboard' | 'company-dashboard') => {
+    try {
+      let me = await apiFetch<ApiResponse<SessionPrincipal>>('/api/auth/me')
+      if (!me.success || !me.data) {
+        // Profile row missing — create it (idempotent).
+        me = await apiFetch<ApiResponse<SessionPrincipal>>('/api/auth/profile', {
+          method: 'POST',
+          body: JSON.stringify({}),
+        })
+      }
+      if (!me.success || !me.data) {
+        throw new Error(me.error || 'Could not load your profile.')
+      }
+      if (me.data.role === 'student') {
+        setRole('student')
+        setUser(me.data.user)
+        setCompany(null)
+        // load student extras
+        const [resumeRes, appsRes, notifRes] = await Promise.all([
+          apiFetch<ApiResponse>('/api/resume').catch(() => null),
+          apiFetch<ApiResponse>('/api/applications').catch(() => null),
+          apiFetch<ApiResponse>('/api/notifications').catch(() => null),
+        ])
+        if (resumeRes?.success && (resumeRes as { data: unknown }).data) setResume((resumeRes as { data: Resume }).data)
+        if (appsRes?.success && (appsRes as { data: unknown }).data) setApplications((appsRes as { data: Application[] }).data)
+        if (notifRes?.success && (notifRes as { data: unknown }).data) setNotifications((notifRes as { data: InternshipNotification[] }).data)
+      } else {
+        setRole('company')
+        setCompany(me.data.company)
+        setUser(null)
+      }
+      setPendingOtp(null)
+      setPage(target)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not complete sign-in.')
+    }
+  }
+
   const submitStudent = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     try {
-      const endpoint = isRegister ? '/api/auth/register' : '/api/auth/login'
-      const payload = isRegister
-        ? studentForm
-        : { email: studentForm.email, password: studentForm.password }
-      const data = await apiFetch<
-        ApiResponse<AuthUser & { sessionToken: string; requiresOtp?: true; devOtp?: string }>
-      >(endpoint, { method: 'POST', body: JSON.stringify(payload), auth: false })
-
-      // Login of an unverified account → 403 with requiresOtp in data
-      if (!data.success && data.data?.requiresOtp) {
-        setPendingOtp({
-          email: data.data.email ?? studentForm.email,
-          role: 'student',
-          devOtp: data.data.devOtp,
+      if (isRegister) {
+        // Supabase signUp → creates the auth user + sends the OTP email.
+        const { error } = await supabaseBrowser.auth.signUp({
+          email: studentForm.email,
+          password: studentForm.password,
+          options: {
+            data: {
+              role: 'student',
+              name: studentForm.name,
+              course: studentForm.course,
+              college: studentForm.college,
+            },
+          },
         })
-        toast.info('Please verify your email to continue.')
-        return
+        if (error) throw new Error(error.message)
+        setPendingOtp({ email: studentForm.email, role: 'student' })
+        toast.success('Account created! Enter the OTP we emailed you to verify.')
+      } else {
+        // Login — if email isn't confirmed yet, trigger the OTP flow.
+        const { error } = await supabaseBrowser.auth.signInWithPassword({
+          email: studentForm.email,
+          password: studentForm.password,
+        })
+        if (error) {
+          const msg = error.message.toLowerCase()
+          if (
+            msg.includes('not confirmed') ||
+            msg.includes('email_not_confirmed') ||
+            error.code === 'email_not_confirmed'
+          ) {
+            // Resend the signup OTP and prompt for it.
+            await supabaseBrowser.auth.resend({ email: studentForm.email, type: 'signup' })
+            setPendingOtp({ email: studentForm.email, role: 'student' })
+            toast.info('Please verify your email first — we sent a new OTP.')
+            return
+          }
+          throw new Error(error.message)
+        }
+        await ensureProfileAndEnter('dashboard')
+        toast.success('Welcome back!')
       }
-      if (!data.success || !data.data) {
-        throw new Error(data.error || 'Something went wrong')
-      }
-
-      // Register success → account created but email unverified
-      setToken(data.data.sessionToken)
-      const { sessionToken: _t, requiresOtp: _ro, devOtp: _do, ...authUser } = data.data
-      setRole('student')
-      setUser(authUser)
-      setCompany(null)
-
-      if (data.data.requiresOtp) {
-        // Need email verification before they can use the app
-        setPendingOtp({ email: authUser.email, role: 'student', devOtp: data.data.devOtp })
-        toast.success('Account created! Verify your email to continue.')
-        return
-      }
-
-      toast.success(isRegister ? 'Student account created!' : 'Welcome back!')
-      const [resumeRes, appsRes, notifRes] = await Promise.all([
-        apiFetch<ApiResponse<Resume>>('/api/resume').catch(() => null),
-        apiFetch<ApiResponse<Application[]>>('/api/applications').catch(() => null),
-        apiFetch<ApiResponse<InternshipNotification[]>>('/api/notifications').catch(() => null),
-      ])
-      if (resumeRes?.success && resumeRes.data) setResume(resumeRes.data)
-      if (appsRes?.success && appsRes.data) setApplications(appsRes.data)
-      if (notifRes?.success && notifRes.data) setNotifications(notifRes.data)
-      setPage('dashboard')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Authentication failed')
     } finally {
@@ -120,41 +149,45 @@ export function AuthSection() {
     e.preventDefault()
     setLoading(true)
     try {
-      const endpoint = isRegister ? '/api/auth/company/register' : '/api/auth/company/login'
-      const payload = isRegister
-        ? companyForm
-        : { email: companyForm.email, password: companyForm.password }
-      const data = await apiFetch<
-        ApiResponse<CompanyAuthUser & { sessionToken: string; requiresOtp?: true; devOtp?: string }>
-      >(endpoint, { method: 'POST', body: JSON.stringify(payload), auth: false })
-
-      if (!data.success && data.data?.requiresOtp) {
-        setPendingOtp({
-          email: data.data.email ?? companyForm.email,
-          role: 'company',
-          devOtp: data.data.devOtp,
+      if (isRegister) {
+        const { error } = await supabaseBrowser.auth.signUp({
+          email: companyForm.email,
+          password: companyForm.password,
+          options: {
+            data: {
+              role: 'company',
+              name: companyForm.name,
+              industry: companyForm.industry,
+              contactPerson: companyForm.contactPerson,
+              location: companyForm.location,
+            },
+          },
         })
-        toast.info('Please verify your company email to continue.')
-        return
+        if (error) throw new Error(error.message)
+        setPendingOtp({ email: companyForm.email, role: 'company' })
+        toast.success('Company account created! Enter the OTP we emailed you to verify.')
+      } else {
+        const { error } = await supabaseBrowser.auth.signInWithPassword({
+          email: companyForm.email,
+          password: companyForm.password,
+        })
+        if (error) {
+          const msg = error.message.toLowerCase()
+          if (
+            msg.includes('not confirmed') ||
+            msg.includes('email_not_confirmed') ||
+            error.code === 'email_not_confirmed'
+          ) {
+            await supabaseBrowser.auth.resend({ email: companyForm.email, type: 'signup' })
+            setPendingOtp({ email: companyForm.email, role: 'company' })
+            toast.info('Please verify your company email first — we sent a new OTP.')
+            return
+          }
+          throw new Error(error.message)
+        }
+        await ensureProfileAndEnter('company-dashboard')
+        toast.success('Welcome back!')
       }
-      if (!data.success || !data.data) {
-        throw new Error(data.error || 'Something went wrong')
-      }
-
-      setToken(data.data.sessionToken)
-      const { sessionToken: _t, requiresOtp: _ro, devOtp: _do, ...companyUser } = data.data
-      setRole('company')
-      setCompany(companyUser)
-      setUser(null)
-
-      if (data.data.requiresOtp) {
-        setPendingOtp({ email: companyUser.email, role: 'company', devOtp: data.data.devOtp })
-        toast.success('Company account created! Verify your email to continue.')
-        return
-      }
-
-      toast.success(isRegister ? 'Company account created!' : 'Welcome back!')
-      setPage('company-dashboard')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Authentication failed')
     } finally {
@@ -208,10 +241,10 @@ export function AuthSection() {
             <CardDescription>
               {isCompany
                 ? isRegister
-                  ? 'Create a company account to post internships and reach students.'
+                  ? 'Create a company account to post internships. We&apos;ll email you a 6-digit OTP to verify.'
                   : 'Sign in to post and manage your internship openings.'
                 : isRegister
-                  ? 'Create your account to upload a resume and get matched.'
+                  ? 'Create your account. We&apos;ll email you a 6-digit OTP to verify your email.'
                   : 'Welcome back. Sign in to continue your career journey.'}
             </CardDescription>
           </CardHeader>
@@ -371,7 +404,6 @@ export function AuthSection() {
               </button>
             </div>
             <div className="mt-2 flex items-center justify-center gap-1 text-xs text-muted-foreground">
-              <User2 className="h-3 w-3" />
               <button
                 type="button"
                 className="hover:underline"

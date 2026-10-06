@@ -1,39 +1,11 @@
-// Centralized fetch wrapper that injects the session token as a Bearer header.
-// Used by all client-side calls to authenticated API routes. This avoids
-// reliance on cookies, which are blocked in cross-origin iframe previews
-// (third-party cookie restrictions in modern browsers).
+// Centralized fetch wrapper that injects the Supabase access token as a
+// Bearer header. The token is read from the Supabase JS client's session
+// (auto-refreshed + persisted in localStorage by supabase-js).
 
-const TOKEN_KEY = 'careerassist_token'
-
-export function getToken(): string | null {
-  if (typeof window === 'undefined') return null
-  try {
-    return window.localStorage.getItem(TOKEN_KEY)
-  } catch {
-    return null
-  }
-}
-
-export function setToken(token: string): void {
-  if (typeof window === 'undefined') return
-  try {
-    window.localStorage.setItem(TOKEN_KEY, token)
-  } catch {
-    // ignore storage errors (private mode, etc.)
-  }
-}
-
-export function clearToken(): void {
-  if (typeof window === 'undefined') return
-  try {
-    window.localStorage.removeItem(TOKEN_KEY)
-  } catch {
-    // ignore
-  }
-}
+import { supabaseBrowser } from '@/lib/supabase-browser'
 
 interface ApiFetchOptions extends RequestInit {
-  // If true, send the Authorization header even for GET requests (default: true)
+  // If false, do not attach the Authorization header (e.g. for public routes).
   auth?: boolean
 }
 
@@ -46,13 +18,12 @@ export async function apiFetch<T = unknown>(
     ...(customHeaders as Record<string, string> | undefined),
   }
 
-  // Always set JSON content-type for requests with a body
   if (rest.body && !headers['Content-Type']) {
     headers['Content-Type'] = 'application/json'
   }
 
   if (auth) {
-    const token = getToken()
+    const token = await getSupabaseAccessToken()
     if (token) {
       headers['Authorization'] = `Bearer ${token}`
     }
@@ -60,4 +31,28 @@ export async function apiFetch<T = unknown>(
 
   const res = await fetch(url, { ...rest, headers })
   return (await res.json()) as T
+}
+
+/** Read the current Supabase access token (auto-refreshed by supabase-js). */
+export async function getSupabaseAccessToken(): Promise<string | null> {
+  try {
+    const {
+      data: { session },
+    } = await supabaseBrowser.auth.getSession()
+    return session?.access_token ?? null
+  } catch {
+    return null
+  }
+}
+
+// ---- Back-compat shims (the old store used these names) ----
+export function getToken(): string | null {
+  // Synchronous best-effort: returns null; real token is fetched async above.
+  return null
+}
+export function setToken(_t: string): void {
+  /* no-op: Supabase-js manages the session */
+}
+export function clearToken(): void {
+  /* no-op: logout calls supabase.auth.signOut() */
 }

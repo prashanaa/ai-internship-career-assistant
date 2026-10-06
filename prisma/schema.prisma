@@ -13,15 +13,14 @@ datasource db {
 }
 
 model User {
-  id             String   @id @default(cuid())
-  name           String
-  email          String   @unique
-  password       String
-  course         String?
-  college        String?
-  emailVerified  Boolean  @default(false)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id            String   @id @default(cuid())
+  supabaseUid   String   @unique   // Supabase auth.users id
+  name          String
+  email         String   @unique
+  course        String?
+  college       String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   resumes       Resume[]
   applications  Application[]
@@ -46,13 +45,12 @@ model Resume {
 
 model Company {
   id             String   @id @default(cuid())
+  supabaseUid    String   @unique   // Supabase auth.users id
   name           String
   email          String   @unique
-  password       String
   industry       String?
   contactPerson  String?
   location       String?
-  emailVerified  Boolean  @default(false)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -111,19 +109,4 @@ model Notification {
 
   @@index([userId])
   @@index([internshipId])
-}
-
-// One-time codes for email verification (students + companies)
-model OtpCode {
-  id        String   @id @default(cuid())
-  email     String   // the email being verified
-  code      String   // 6-digit code
-  role      String   // 'student' | 'company'
-  purpose   String   @default("register") // 'register' | 'login'
-  consumed   Boolean  @default(false)
-  expiresAt DateTime
-  createdAt DateTime @default(now())
-
-  @@index([email])
-  @@index([code])
 }
