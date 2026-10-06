@@ -3,9 +3,8 @@
 // Replaces z-ai-web-dev-sdk for chat completions.
 
 const DAHL_API_BASE = process.env.DAHL_API_BASE || 'https://inference.dahl.global/v1'
-// Fallback to the configured key if .env is missing/cleared (prevents
-// "DAHL_API_KEY is not configured" errors when the sandbox resets .env).
-const DAHL_API_KEY = process.env.DAHL_API_KEY || 'dahl_ERVacbVJcFs4XZZuqwdJMx5DoTAEau6Lw'
+// API key must be supplied via the DAHL_API_KEY env var — never hardcode secrets.
+const DAHL_API_KEY = process.env.DAHL_API_KEY || ''
 const DAHL_MODEL = process.env.DAHL_MODEL || 'MiniMaxAI/MiniMax-M2.7'
 
 export interface DahlChatMessage {

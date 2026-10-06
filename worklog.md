@@ -57,7 +57,7 @@ Agent: main (Z.ai Code)
 Task: Replace the z-ai-web-dev-sdk AI backend with the Dahl Inference API (https://inference.dahl.global/docs/) using the user-provided API key.
 
 Work Log:
-- Read credentials from /home/z/my-project/upload/dahl-credentials.txt (api_key: dahl_ERVacbVJcFs4XZZuqwdJMx5DoTAEau6Lw).
+- Read credentials from /home/z/my-project/upload/dahl-credentials.txt (api_key: <your-dahl-api-key>).
 - Used z-ai page_reader CLI to fetch Dahl docs (quickstart, authentication, models, api pages).
   - Base URL: https://inference.dahl.global/v1
   - Endpoints: GET /v1/models (public), POST /v1/chat/completions (Bearer auth, OpenAI-compatible)

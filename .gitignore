@@ -32,6 +32,16 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
+
+# database (local SQLite with user data)
+db/*.db
+db/*.db-journal
+
+# uploads & local artifacts (user resumes, credentials, tool output)
+upload/
+tool-results/
+download/
 
 # vercel
 .vercel
