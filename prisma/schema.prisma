@@ -5,8 +5,11 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
+  // Vercel runs on Linux x86_64; this ensures the correct query-engine binary
+  // is fetched during `prisma generate`.
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
 }
 
 model User {

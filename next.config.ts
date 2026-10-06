@@ -1,8 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  output: "standalone",
-  /* config options here */
+  // NOTE: do NOT set `output: "standalone"` on Vercel — Vercel uses its own
+  // optimized build output. standalone + the cp commands break the Vercel build.
   typescript: {
     ignoreBuildErrors: true,
   },
