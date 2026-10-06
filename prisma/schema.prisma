@@ -2,6 +2,8 @@
 
 generator client {
   provider = "prisma-client-js"
+  // For Vercel (Linux) + local dev. linux-musl covers Vercel's Alpine-based runtime.
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
 }
 
 datasource db {
@@ -11,9 +13,6 @@ datasource db {
   // Session pooler (port 5432) — used for `prisma db push` / migrations,
   // which the transaction pooler can't run (no prepared statements).
   directUrl = env("DIRECT_URL")
-  // Vercel runs on Linux x86_64; this ensures the correct query-engine binary
-  // is fetched during `prisma generate`.
-  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
 }
 
 model User {
