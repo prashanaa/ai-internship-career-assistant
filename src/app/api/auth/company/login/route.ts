@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { db } from '@/lib/db'
 import { setCompanySession, buildCompanyToken } from '@/lib/session'
+import { issueOtp } from '@/lib/otp'
+import { sendOtpEmail } from '@/lib/email'
 import type { ApiResponse, CompanyAuthUser } from '@/lib/types'
 
 const LoginSchema = z.object({
@@ -30,6 +32,22 @@ export async function POST(req: NextRequest) {
       )
     }
 
+    // Block login until the company email is verified. Issue a fresh OTP.
+    if (!company.emailVerified) {
+      const otp = await issueOtp(email, 'company', 'register')
+      const sendResult = await sendOtpEmail(email, otp.code, 'company')
+      return NextResponse.json<
+        ApiResponse<{ requiresOtp: true; email: string; devOtp?: string }>
+      >(
+        {
+          success: false,
+          error: 'Please verify your company email to continue.',
+          data: { requiresOtp: true, email, devOtp: sendResult.devCode },
+        },
+        { status: 403 }
+      )
+    }
+
     await setCompanySession(company.id)
 
     const companyUser: CompanyAuthUser = {
@@ -39,6 +57,7 @@ export async function POST(req: NextRequest) {
       industry: company.industry,
       contactPerson: company.contactPerson,
       location: company.location,
+      emailVerified: company.emailVerified,
     }
 
     return NextResponse.json<ApiResponse<CompanyAuthUser & { sessionToken: string }>>({

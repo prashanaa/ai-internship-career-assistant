@@ -125,6 +125,7 @@ export async function getSessionPrincipal(): Promise<SessionPrincipal | null> {
         email: user.email,
         course: user.course,
         college: user.college,
+        emailVerified: user.emailVerified,
       },
     }
   }
@@ -141,6 +142,7 @@ export async function getSessionPrincipal(): Promise<SessionPrincipal | null> {
       industry: company.industry,
       contactPerson: company.contactPerson,
       location: company.location,
+      emailVerified: company.emailVerified,
     },
   }
 }

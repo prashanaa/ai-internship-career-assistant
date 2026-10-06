@@ -24,6 +24,12 @@ export type PageView =
   | 'company-post'
   | 'company-internships'
 
+interface PendingOtp {
+  email: string
+  role: 'student' | 'company'
+  devOtp?: string
+}
+
 interface AppState {
   role: 'student' | 'company' | null
   user: AuthUser | null
@@ -35,6 +41,7 @@ interface AppState {
   page: PageView
   authMode: 'login' | 'register'
   authRole: 'student' | 'company'
+  pendingOtp: PendingOtp | null
   setRole: (role: 'student' | 'company' | null) => void
   setUser: (user: AuthUser | null) => void
   setCompany: (company: CompanyAuthUser | null) => void
@@ -46,6 +53,7 @@ interface AppState {
   setPage: (page: PageView) => void
   setAuthMode: (mode: 'login' | 'register') => void
   setAuthRole: (role: 'student' | 'company') => void
+  setPendingOtp: (p: PendingOtp | null) => void
   logout: () => Promise<void>
   bootstrap: () => Promise<void>
   pollNotifications: () => Promise<void>
@@ -62,6 +70,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   page: 'home',
   authMode: 'login',
   authRole: 'student',
+  pendingOtp: null,
   setRole: (role) => set({ role }),
   setUser: (user) => set({ user }),
   setCompany: (company) => set({ company }),
@@ -87,6 +96,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   setPage: (page) => set({ page }),
   setAuthMode: (authMode) => set({ authMode }),
   setAuthRole: (authRole) => set({ authRole }),
+  setPendingOtp: (pendingOtp) => set({ pendingOtp }),
   logout: async () => {
     try {
       await apiFetch('/api/auth/logout', { method: 'POST' })
@@ -103,11 +113,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       notifications: [],
       unreadCount: 0,
       page: 'home',
+      pendingOtp: null,
     })
   },
   bootstrap: async () => {
     if (!getToken()) {
-      set({ role: null, user: null, company: null, resume: null, applications: [] })
+      set({ role: null, user: null, company: null, resume: null, applications: [], pendingOtp: null })
       return
     }
     try {
@@ -118,7 +129,13 @@ export const useAppStore = create<AppState>((set, get) => ({
         return
       }
       if (me.data.role === 'student') {
-        set({ role: 'student', user: me.data.user, company: null })
+        const u = me.data.user
+        set({ role: 'student', user: u, company: null })
+        // If email isn't verified yet, keep the user on the auth page to enter OTP
+        if (!u.emailVerified) {
+          set({ pendingOtp: { email: u.email, role: 'student' }, page: 'auth' })
+          return
+        }
         const [resumeRes, appsRes, notifRes] = await Promise.all([
           apiFetch<ApiResponse<Resume>>('/api/resume').catch(() => null),
           apiFetch<ApiResponse<Application[]>>('/api/applications').catch(() => null),
@@ -130,7 +147,12 @@ export const useAppStore = create<AppState>((set, get) => ({
           set({ notifications: notifRes.data, unreadCount: notifRes.data.filter((n) => !n.read).length })
         }
       } else {
-        set({ role: 'company', company: me.data.company, user: null })
+        const c = me.data.company
+        set({ role: 'company', company: c, user: null })
+        if (!c.emailVerified) {
+          set({ pendingOtp: { email: c.email, role: 'company' }, page: 'auth' })
+          return
+        }
       }
     } catch {
       // ignore

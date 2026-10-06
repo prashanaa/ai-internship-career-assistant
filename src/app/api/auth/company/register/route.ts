@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { db } from '@/lib/db'
 import { setCompanySession, buildCompanyToken } from '@/lib/session'
+import { issueOtp } from '@/lib/otp'
+import { sendOtpEmail } from '@/lib/email'
 import type { ApiResponse, CompanyAuthUser } from '@/lib/types'
 
 const RegisterSchema = z.object({
@@ -47,6 +49,10 @@ export async function POST(req: NextRequest) {
 
     await setCompanySession(company.id)
 
+    // Issue + send email OTP for verification
+    const otp = await issueOtp(email, 'company', 'register')
+    const sendResult = await sendOtpEmail(email, otp.code, 'company')
+
     const companyUser: CompanyAuthUser = {
       id: company.id,
       name: company.name,
@@ -54,11 +60,19 @@ export async function POST(req: NextRequest) {
       industry: company.industry,
       contactPerson: company.contactPerson,
       location: company.location,
+      emailVerified: false,
     }
 
-    return NextResponse.json<ApiResponse<CompanyAuthUser & { sessionToken: string }>>({
+    return NextResponse.json<
+      ApiResponse<CompanyAuthUser & { sessionToken: string; requiresOtp: true; devOtp?: string }>
+    >({
       success: true,
-      data: { ...companyUser, sessionToken: buildCompanyToken(company.id) },
+      data: {
+        ...companyUser,
+        sessionToken: buildCompanyToken(company.id),
+        requiresOtp: true,
+        devOtp: sendResult.devCode,
+      },
     })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Registration failed'

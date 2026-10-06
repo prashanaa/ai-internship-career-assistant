@@ -182,3 +182,34 @@ Verification:
 
 Stage Summary:
 - Companies now have their own login and can post internships. The Dahl AI parses each posted job description into skill filters that the existing matching engine uses against student resumes. Students are notified (bell + 45s polling + toast) the moment a company posts, and see match scores on the new internships.
+
+---
+Task ID: 14
+Agent: main (Z.ai Code)
+Task: Add OTP email verification for both student and company registration/login.
+
+Work Log:
+- Installed nodemailer (+ @types/nodemailer).
+- Prisma: added `emailVerified Boolean @default(false)` to User & Company; added a new `OtpCode` model (email, code, role, purpose, consumed, expiresAt, createdAt) with indexes on email + code. Ran `bun run db:push`.
+- Created src/lib/otp.ts: issueOtp() (6-digit crypto-random code, 10-min TTL, invalidates prior unconsumed codes), verifyOtp() (validates + marks consumed), resendCooldownSeconds() (30s cooldown).
+- Created src/lib/email.ts: sendOtpEmail() uses nodemailer. If SMTP_HOST/PORT/USER/PASS env vars are set → real SMTP. Otherwise → dev mode: logs the code server-side AND returns it as devCode so the UI can display it (clearly marked "Dev mode — SMTP not configured"). This keeps the feature fully testable in the sandbox without email credentials.
+- Updated shared types: AuthUser & CompanyAuthUser now include `emailVerified: boolean`. SessionPrincipal returns it via getSessionPrincipal.
+- Backend routes:
+  - Modified /api/auth/register (student) and /api/auth/company/register (company): create the account with emailVerified=false, issue an OTP, send the email, return {user/company, sessionToken, requiresOtp: true, devOtp?}.
+  - Modified /api/auth/login (student) and /api/auth/company/login (company): if the account exists but emailVerified=false, issue a fresh OTP and return 403 with {requiresOtp, email, devOtp?} so the frontend can prompt for the code.
+  - New POST /api/auth/verify-otp: validates {email, code, role}, marks the account emailVerified=true, establishes a fresh session, returns the principal + sessionToken.
+  - New POST /api/auth/resend-otp: enforces the 30s cooldown, issues a new OTP, sends it, returns devOtp in dev mode.
+- Frontend:
+  - Store: added `pendingOtp` state (email, role, devOtp). bootstrap() now routes to the OTP screen if the session's account is unverified. logout() clears it.
+  - New src/components/app/sections/otp-verification.tsx: 6-box OTP input with auto-advance + paste handling, "Verify & continue" button, resend with 30s countdown, and a dev-mode banner showing the code (clickable to auto-fill) when SMTP isn't configured.
+  - auth.tsx submitStudent/submitCompany: on register success with requiresOtp, store the token + set role/user but DON'T navigate — set pendingOtp so the OTP screen renders. On login 403 with requiresOtp, set pendingOtp instead of erroring.
+  - page.tsx: renders <OtpVerification/> when pendingOtp is set (overrides the normal page routing).
+
+Verification (curl + Agent Browser):
+- curl: register → 200 with requiresOtp:true + devOtp:"867742" + emailVerified:false. verify-otp with correct code → 200, emailVerified:true, fresh token. Login of an unverified account → 403 with requiresOtp:true + a fresh devOtp.
+- Agent Browser: registered student "Test Flow" → OTP verification screen appeared with 6 auto-filled digits (dev mode) + "Dev mode (SMTP not configured)" banner → clicked "Verify & continue" → "Email verified! Welcome to CareerAssist." toast → student dashboard. Repeated for company "Acme Corp" → same flow → company dashboard. No console errors.
+- Dev log: [DEV EMAIL] lines logged for each registration (To: … | OTP code: …).
+- Lint clean.
+
+Stage Summary:
+- Both students and companies must now verify their email via a 6-digit OTP before they can use the app. Codes are issued on register and on login of an unverified account, expire after 10 minutes, and enforce a 30s resend cooldown. In production, set SMTP_HOST/PORT/USER/PASS/FROM in .env to send real emails; the dev fallback shows the code on screen so the flow is always testable.

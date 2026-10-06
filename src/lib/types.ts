@@ -8,6 +8,7 @@ export interface AuthUser {
   email: string
   course: string | null
   college: string | null
+  emailVerified: boolean
 }
 
 export interface CompanyAuthUser {
@@ -17,6 +18,7 @@ export interface CompanyAuthUser {
   industry: string | null
   contactPerson: string | null
   location: string | null
+  emailVerified: boolean
 }
 
 // Union returned by the role-aware /api/auth/me
