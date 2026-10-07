@@ -15,12 +15,11 @@ import { ApplicationsSection } from '@/components/app/sections/applications'
 import { CompanyDashboardSection } from '@/components/app/sections/company-dashboard'
 import { CompanyPostSection } from '@/components/app/sections/company-post'
 import { CompanyInternshipsSection } from '@/components/app/sections/company-internships'
-import { OtpVerification } from '@/components/app/sections/otp-verification'
 import { toast } from 'sonner'
 import { Loader2 } from 'lucide-react'
 
 export default function Home() {
-  const { page, role, user, company, pendingOtp, bootstrap, setPage, pollNotifications } = useAppStore()
+  const { page, role, user, company, bootstrap, setPage, pollNotifications } = useAppStore()
   const [ready, setReady] = useState(false)
   const [lastNotifCount, setLastNotifCount] = useState(0)
 
@@ -89,8 +88,6 @@ export default function Home() {
             <Loader2 className="h-6 w-6 animate-spin mr-2 text-brand" />
             Loading CareerAssist...
           </div>
-        ) : pendingOtp ? (
-          <OtpVerification />
         ) : page === 'home' ? (
           <HomeSection />
         ) : page === 'auth' ? (

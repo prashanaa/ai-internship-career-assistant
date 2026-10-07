@@ -2,8 +2,11 @@
 
 generator client {
   provider = "prisma-client-js"
-  // For Vercel (Linux) + local dev. linux-musl covers Vercel's Alpine-based runtime.
-  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+  // Covers local dev (native) + Vercel's Linux runtimes:
+  //   - linux-musl-openssl-3.0.x  → Alpine/musl (Node 22+ on Vercel)
+  //   - debian-openssl-3.0.x      → Debian glibc with OpenSSL 3 (Node 22)
+  //   - debian-openssl-1.1.x      → Debian glibc with OpenSSL 1.1 (Node 18/20)
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x", "debian-openssl-3.0.x", "debian-openssl-1.1.x"]
 }
 
 datasource db {

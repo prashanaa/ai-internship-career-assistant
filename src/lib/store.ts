@@ -24,11 +24,6 @@ export type PageView =
   | 'company-post'
   | 'company-internships'
 
-interface PendingOtp {
-  email: string
-  role: 'student' | 'company'
-}
-
 interface AppState {
   role: 'student' | 'company' | null
   user: AuthUser | null
@@ -40,7 +35,6 @@ interface AppState {
   page: PageView
   authMode: 'login' | 'register'
   authRole: 'student' | 'company'
-  pendingOtp: PendingOtp | null
   setRole: (role: 'student' | 'company' | null) => void
   setUser: (user: AuthUser | null) => void
   setCompany: (company: CompanyAuthUser | null) => void
@@ -52,7 +46,6 @@ interface AppState {
   setPage: (page: PageView) => void
   setAuthMode: (mode: 'login' | 'register') => void
   setAuthRole: (role: 'student' | 'company') => void
-  setPendingOtp: (p: PendingOtp | null) => void
   logout: () => Promise<void>
   bootstrap: () => Promise<void>
   pollNotifications: () => Promise<void>
@@ -69,7 +62,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   page: 'home',
   authMode: 'login',
   authRole: 'student',
-  pendingOtp: null,
   setRole: (role) => set({ role }),
   setUser: (user) => set({ user }),
   setCompany: (company) => set({ company }),
@@ -95,7 +87,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   setPage: (page) => set({ page }),
   setAuthMode: (authMode) => set({ authMode }),
   setAuthRole: (authRole) => set({ authRole }),
-  setPendingOtp: (pendingOtp) => set({ pendingOtp }),
   logout: async () => {
     try {
       await supabaseBrowser.auth.signOut()
@@ -111,7 +102,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       notifications: [],
       unreadCount: 0,
       page: 'home',
-      pendingOtp: null,
     })
   },
   bootstrap: async () => {
@@ -120,7 +110,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       data: { session },
     } = await supabaseBrowser.auth.getSession()
     if (!session) {
-      set({ role: null, user: null, company: null, resume: null, applications: [], pendingOtp: null })
+      set({ role: null, user: null, company: null, resume: null, applications: [] })
       return
     }
 
@@ -176,7 +166,7 @@ async function applyPrincipal(
   set: (partial: Partial<AppState>) => void
 ) {
   if (principal.role === 'student') {
-    set({ role: 'student', user: principal.user, company: null, pendingOtp: null })
+    set({ role: 'student', user: principal.user, company: null })
     const [resumeRes, appsRes, notifRes] = await Promise.all([
       apiFetch<ApiResponse<Resume>>('/api/resume').catch(() => null),
       apiFetch<ApiResponse<Application[]>>('/api/applications').catch(() => null),
@@ -191,6 +181,6 @@ async function applyPrincipal(
     }
     set(patch)
   } else {
-    set({ role: 'company', company: principal.company, user: null, pendingOtp: null })
+    set({ role: 'company', company: principal.company, user: null })
   }
 }

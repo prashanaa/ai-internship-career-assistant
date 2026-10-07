@@ -32,7 +32,6 @@ export function AuthSection() {
     setApplications,
     setNotifications,
     setPage,
-    setPendingOtp,
   } = useAppStore()
   const [loading, setLoading] = useState(false)
   const [studentForm, setStudentForm] = useState({
@@ -121,35 +120,23 @@ export function AuthSection() {
           toast.success('Account created! Welcome to CareerAssist.')
           return
         }
-        setPendingOtp({ email: studentForm.email, role: 'student' })
-        toast.success('Account created! Enter the OTP we emailed you to verify.')
+        // No session returned → "Confirm email" is ON in Supabase. The user
+        // can't be auto-verified; ask them to disable email confirmation.
+        throw new Error(
+          'Email confirmation is enabled in Supabase. Disable "Confirm email" in your Supabase Auth settings to allow direct sign-up, then try again.'
+        )
       } else {
-        // Login — if email isn't confirmed yet, trigger the OTP flow.
+        // Login — straight password sign-in (no OTP).
         const { error } = await supabaseBrowser.auth.signInWithPassword({
           email: studentForm.email,
           password: studentForm.password,
         })
         if (error) {
-          const msg = error.message.toLowerCase()
-          // Supabase returns "Invalid login credentials" for: wrong password,
-          // non-existent user, AND unconfirmed email (to prevent enumeration).
-          // Treat it as potentially-unconfirmed → resend the OTP. If the email
-          // is registered but unverified, a new code is sent; if not registered,
-          // no email goes out (and the user should Register instead).
-          if (
-            msg.includes('invalid login credentials') ||
-            msg.includes('not confirmed') ||
-            msg.includes('email_not_confirmed') ||
-            error.code === 'email_not_confirmed'
-          ) {
-            await supabaseBrowser.auth.resend({ email: studentForm.email, type: 'signup' })
-            setPendingOtp({ email: studentForm.email, role: 'student' })
-            toast.info(
-              'If this email is registered but unverified, we sent a new OTP. If you don\'t receive it, click "Use a different account" and Register.'
-            )
-            return
-          }
-          throw new Error(error.message)
+          throw new Error(
+            error.message.includes('Invalid login credentials')
+              ? 'Invalid email or password. If you don\'t have an account, click "Sign up".'
+              : error.message
+          )
         }
         await ensureProfileAndEnter('dashboard')
         toast.success('Welcome back!')
@@ -187,29 +174,20 @@ export function AuthSection() {
           toast.success('Company account created! Welcome to CareerAssist.')
           return
         }
-        setPendingOtp({ email: companyForm.email, role: 'company' })
-        toast.success('Company account created! Enter the OTP we emailed you to verify.')
+        throw new Error(
+          'Email confirmation is enabled in Supabase. Disable "Confirm email" in your Supabase Auth settings to allow direct sign-up, then try again.'
+        )
       } else {
         const { error } = await supabaseBrowser.auth.signInWithPassword({
           email: companyForm.email,
           password: companyForm.password,
         })
         if (error) {
-          const msg = error.message.toLowerCase()
-          if (
-            msg.includes('invalid login credentials') ||
-            msg.includes('not confirmed') ||
-            msg.includes('email_not_confirmed') ||
-            error.code === 'email_not_confirmed'
-          ) {
-            await supabaseBrowser.auth.resend({ email: companyForm.email, type: 'signup' })
-            setPendingOtp({ email: companyForm.email, role: 'company' })
-            toast.info(
-              'If this email is registered but unverified, we sent a new OTP. If you don\'t receive it, click "Use a different account" and Register.'
-            )
-            return
-          }
-          throw new Error(error.message)
+          throw new Error(
+            error.message.includes('Invalid login credentials')
+              ? 'Invalid company email or password. If you don\'t have an account, click "Sign up".'
+              : error.message
+          )
         }
         await ensureProfileAndEnter('company-dashboard')
         toast.success('Welcome back!')
