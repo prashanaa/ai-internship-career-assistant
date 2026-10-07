@@ -99,8 +99,10 @@ export function AuthSection() {
     setLoading(true)
     try {
       if (isRegister) {
-        // Supabase signUp → creates the auth user + sends the OTP email.
-        const { error } = await supabaseBrowser.auth.signUp({
+        // Supabase signUp → creates the auth user. If Supabase returns a session
+        // (Confirm email OFF), we auto-verify + go straight to the dashboard
+        // (no OTP screen). If no session (Confirm email ON), show the OTP form.
+        const { data, error } = await supabaseBrowser.auth.signUp({
           email: studentForm.email,
           password: studentForm.password,
           options: {
@@ -113,6 +115,12 @@ export function AuthSection() {
           },
         })
         if (error) throw new Error(error.message)
+        if (data.session) {
+          // Auto-verified — create the local profile + enter the app.
+          await ensureProfileAndEnter('dashboard')
+          toast.success('Account created! Welcome to CareerAssist.')
+          return
+        }
         setPendingOtp({ email: studentForm.email, role: 'student' })
         toast.success('Account created! Enter the OTP we emailed you to verify.')
       } else {
@@ -158,7 +166,7 @@ export function AuthSection() {
     setLoading(true)
     try {
       if (isRegister) {
-        const { error } = await supabaseBrowser.auth.signUp({
+        const { data, error } = await supabaseBrowser.auth.signUp({
           email: companyForm.email,
           password: companyForm.password,
           options: {
@@ -172,6 +180,13 @@ export function AuthSection() {
           },
         })
         if (error) throw new Error(error.message)
+        // Auto-verify: if Supabase returned a session (Confirm email OFF),
+        // skip the OTP screen and go straight to the company dashboard.
+        if (data.session) {
+          await ensureProfileAndEnter('company-dashboard')
+          toast.success('Company account created! Welcome to CareerAssist.')
+          return
+        }
         setPendingOtp({ email: companyForm.email, role: 'company' })
         toast.success('Company account created! Enter the OTP we emailed you to verify.')
       } else {
