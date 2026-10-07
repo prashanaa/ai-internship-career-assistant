@@ -14,9 +14,15 @@ import {
 } from '@/components/ui/card'
 import { toast } from 'sonner'
 import { Loader2, GraduationCap, Building2 } from 'lucide-react'
-import type { ApiResponse, SessionPrincipal, Resume, Application, InternshipNotification } from '@/lib/types'
-import { apiFetch } from '@/lib/api'
-import { supabaseBrowser } from '@/lib/supabase-browser'
+import type {
+  AuthUser,
+  CompanyAuthUser,
+  ApiResponse,
+  Resume,
+  Application,
+  InternshipNotification,
+} from '@/lib/types'
+import { apiFetch, setToken } from '@/lib/api'
 import { PasswordInput } from '@/components/app/password-input'
 
 export function AuthSection() {
@@ -53,94 +59,36 @@ export function AuthSection() {
   const isRegister = authMode === 'register'
   const isCompany = authRole === 'company'
 
-  // After a successful Supabase auth event (verifyOtp / signInWithPassword),
-  // ensure the local Profile row exists, then apply the principal.
-  const ensureProfileAndEnter = async (target: 'dashboard' | 'company-dashboard') => {
-    try {
-      let me = await apiFetch<ApiResponse<SessionPrincipal>>('/api/auth/me')
-      if (!me.success || !me.data) {
-        // Profile row missing — create it (idempotent).
-        me = await apiFetch<ApiResponse<SessionPrincipal>>('/api/auth/profile', {
-          method: 'POST',
-          body: JSON.stringify({}),
-        })
-      }
-      if (!me.success || !me.data) {
-        throw new Error(me.error || 'Could not load your profile.')
-      }
-      if (me.data.role === 'student') {
-        setRole('student')
-        setUser(me.data.user)
-        setCompany(null)
-        // load student extras
-        const [resumeRes, appsRes, notifRes] = await Promise.all([
-          apiFetch<ApiResponse>('/api/resume').catch(() => null),
-          apiFetch<ApiResponse>('/api/applications').catch(() => null),
-          apiFetch<ApiResponse>('/api/notifications').catch(() => null),
-        ])
-        if (resumeRes?.success && (resumeRes as { data: unknown }).data) setResume((resumeRes as { data: Resume }).data)
-        if (appsRes?.success && (appsRes as { data: unknown }).data) setApplications((appsRes as { data: Application[] }).data)
-        if (notifRes?.success && (notifRes as { data: unknown }).data) setNotifications((notifRes as { data: InternshipNotification[] }).data)
-      } else {
-        setRole('company')
-        setCompany(me.data.company)
-        setUser(null)
-      }
-      setPendingOtp(null)
-      setPage(target)
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not complete sign-in.')
-    }
-  }
-
   const submitStudent = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     try {
-      if (isRegister) {
-        // Supabase signUp → creates the auth user. If Supabase returns a session
-        // (Confirm email OFF), we auto-verify + go straight to the dashboard
-        // (no OTP screen). If no session (Confirm email ON), show the OTP form.
-        const { data, error } = await supabaseBrowser.auth.signUp({
-          email: studentForm.email,
-          password: studentForm.password,
-          options: {
-            data: {
-              role: 'student',
-              name: studentForm.name,
-              course: studentForm.course,
-              college: studentForm.college,
-            },
-          },
-        })
-        if (error) throw new Error(error.message)
-        if (data.session) {
-          // Auto-verified — create the local profile + enter the app.
-          await ensureProfileAndEnter('dashboard')
-          toast.success('Account created! Welcome to CareerAssist.')
-          return
-        }
-        // No session returned → "Confirm email" is ON in Supabase. The user
-        // can't be auto-verified; ask them to disable email confirmation.
-        throw new Error(
-          'Email confirmation is enabled in Supabase. Disable "Confirm email" in your Supabase Auth settings to allow direct sign-up, then try again.'
-        )
-      } else {
-        // Login — straight password sign-in (no OTP).
-        const { error } = await supabaseBrowser.auth.signInWithPassword({
-          email: studentForm.email,
-          password: studentForm.password,
-        })
-        if (error) {
-          throw new Error(
-            error.message.includes('Invalid login credentials')
-              ? 'Invalid email or password. If you don\'t have an account, click "Sign up".'
-              : error.message
-          )
-        }
-        await ensureProfileAndEnter('dashboard')
-        toast.success('Welcome back!')
+      const endpoint = isRegister ? '/api/auth/register' : '/api/auth/login'
+      const payload = isRegister
+        ? studentForm
+        : { email: studentForm.email, password: studentForm.password }
+      const data = await apiFetch<ApiResponse<AuthUser & { sessionToken: string }>>(
+        endpoint,
+        { method: 'POST', body: JSON.stringify(payload), auth: false }
+      )
+      if (!data.success || !data.data) {
+        throw new Error(data.error || 'Something went wrong')
       }
+      setToken(data.data.sessionToken)
+      const { sessionToken: _t, ...authUser } = data.data
+      setRole('student')
+      setUser(authUser)
+      setCompany(null)
+      toast.success(isRegister ? 'Student account created!' : 'Welcome back!')
+      const [resumeRes, appsRes, notifRes] = await Promise.all([
+        apiFetch<ApiResponse<Resume>>('/api/resume').catch(() => null),
+        apiFetch<ApiResponse<Application[]>>('/api/applications').catch(() => null),
+        apiFetch<ApiResponse<InternshipNotification[]>>('/api/notifications').catch(() => null),
+      ])
+      if (resumeRes?.success && resumeRes.data) setResume(resumeRes.data)
+      if (appsRes?.success && appsRes.data) setApplications(appsRes.data)
+      if (notifRes?.success && notifRes.data) setNotifications(notifRes.data)
+      setPage('dashboard')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Authentication failed')
     } finally {
@@ -152,46 +100,24 @@ export function AuthSection() {
     e.preventDefault()
     setLoading(true)
     try {
-      if (isRegister) {
-        const { data, error } = await supabaseBrowser.auth.signUp({
-          email: companyForm.email,
-          password: companyForm.password,
-          options: {
-            data: {
-              role: 'company',
-              name: companyForm.name,
-              industry: companyForm.industry,
-              contactPerson: companyForm.contactPerson,
-              location: companyForm.location,
-            },
-          },
-        })
-        if (error) throw new Error(error.message)
-        // Auto-verify: if Supabase returned a session (Confirm email OFF),
-        // skip the OTP screen and go straight to the company dashboard.
-        if (data.session) {
-          await ensureProfileAndEnter('company-dashboard')
-          toast.success('Company account created! Welcome to CareerAssist.')
-          return
-        }
-        throw new Error(
-          'Email confirmation is enabled in Supabase. Disable "Confirm email" in your Supabase Auth settings to allow direct sign-up, then try again.'
-        )
-      } else {
-        const { error } = await supabaseBrowser.auth.signInWithPassword({
-          email: companyForm.email,
-          password: companyForm.password,
-        })
-        if (error) {
-          throw new Error(
-            error.message.includes('Invalid login credentials')
-              ? 'Invalid company email or password. If you don\'t have an account, click "Sign up".'
-              : error.message
-          )
-        }
-        await ensureProfileAndEnter('company-dashboard')
-        toast.success('Welcome back!')
+      const endpoint = isRegister ? '/api/auth/company/register' : '/api/auth/company/login'
+      const payload = isRegister
+        ? companyForm
+        : { email: companyForm.email, password: companyForm.password }
+      const data = await apiFetch<ApiResponse<CompanyAuthUser & { sessionToken: string }>>(
+        endpoint,
+        { method: 'POST', body: JSON.stringify(payload), auth: false }
+      )
+      if (!data.success || !data.data) {
+        throw new Error(data.error || 'Something went wrong')
       }
+      setToken(data.data.sessionToken)
+      const { sessionToken: _t, ...companyUser } = data.data
+      setRole('company')
+      setCompany(companyUser)
+      setUser(null)
+      toast.success(isRegister ? 'Company account created!' : 'Welcome back!')
+      setPage('company-dashboard')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Authentication failed')
     } finally {
@@ -245,10 +171,10 @@ export function AuthSection() {
             <CardDescription>
               {isCompany
                 ? isRegister
-                  ? 'Create a company account to post internships. We&apos;ll email you a 6-digit OTP to verify.'
+                  ? 'Create a company account to post internships and reach students.'
                   : 'Sign in to post and manage your internship openings.'
                 : isRegister
-                  ? 'Create your account. We&apos;ll email you a 6-digit OTP to verify your email.'
+                  ? 'Create your account to upload a resume and get matched.'
                   : 'Welcome back. Sign in to continue your career journey.'}
             </CardDescription>
           </CardHeader>
@@ -399,7 +325,7 @@ export function AuthSection() {
             <Button
               type="button"
               variant="outline"
-              className="w-full border-brand text-brand hover:bg-brand hover:text-white"
+              className="w-full border-brand text-brand hover:bg-brand hover:text-white mt-3"
               onClick={() => setAuthMode(isRegister ? 'login' : 'register')}
             >
               {isRegister ? 'Already registered? Sign in' : "Don't have an account? Sign up"}

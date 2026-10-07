@@ -1,46 +1,90 @@
-// Session helper — verifies the Supabase access token from the
-// Authorization: Bearer header, then looks up the local Profile (User or
-// Company) by supabaseUid. Supabase owns auth (signup, OTP, sessions);
-// Prisma owns the app's profile + business data.
-
-import { headers } from 'next/headers'
+import { cookies, headers } from 'next/headers'
 import { db } from '@/lib/db'
-import { verifySupabaseToken } from '@/lib/supabase-server'
 import type { AuthUser, CompanyAuthUser, SessionPrincipal } from '@/lib/types'
 
-/**
- * Read the Supabase access token from the Authorization header and return
- * the matching principal (student or company), or null if not authenticated.
- */
+const SESSION_COOKIE = 'careerassist_session'
+const STUDENT_TOKEN_PREFIX = 'cat_' // CareerAssist student token
+const COMPANY_TOKEN_PREFIX = 'cac_' // CareerAssist company token
+
+// ---- Cookie helpers (kept for direct browser access) ----
+
+export async function setStudentSession(userId: string) {
+  const cookieStore = await cookies()
+  cookieStore.set(SESSION_COOKIE, userId, {
+    httpOnly: true,
+    sameSite: 'lax',
+    path: '/',
+    maxAge: 60 * 60 * 24 * 7,
+  })
+}
+
+export async function setCompanySession(companyId: string) {
+  const cookieStore = await cookies()
+  cookieStore.set(SESSION_COOKIE, `company:${companyId}`, {
+    httpOnly: true,
+    sameSite: 'lax',
+    path: '/',
+    maxAge: 60 * 60 * 24 * 7,
+  })
+}
+
+export async function clearSessionCookie() {
+  const cookieStore = await cookies()
+  cookieStore.delete(SESSION_COOKIE)
+}
+
+// ---- Token builders (stored in localStorage, sent as Bearer header) ----
+
+export function buildStudentToken(userId: string): string {
+  return `${STUDENT_TOKEN_PREFIX}${userId}`
+}
+
+export function buildCompanyToken(companyId: string): string {
+  return `${COMPANY_TOKEN_PREFIX}${companyId}`
+}
+
+function decodeToken(token: string): { role: 'student' | 'company'; id: string } | null {
+  if (token.startsWith(STUDENT_TOKEN_PREFIX)) {
+    const id = token.slice(STUDENT_TOKEN_PREFIX.length)
+    return id ? { role: 'student', id } : null
+  }
+  if (token.startsWith(COMPANY_TOKEN_PREFIX)) {
+    const id = token.slice(COMPANY_TOKEN_PREFIX.length)
+    return id ? { role: 'company', id } : null
+  }
+  return null
+}
+
+// ---- Session lookups ----
+
 export async function getSessionPrincipal(): Promise<SessionPrincipal | null> {
+  // 1) Prefer the Bearer token header (works in iframe previews where cookies are blocked)
   const headerStore = await headers()
   const authHeader = headerStore.get('authorization') ?? ''
-  if (!authHeader.toLowerCase().startsWith('bearer ')) return null
+  let decoded: { role: 'student' | 'company'; id: string } | null = null
+  if (authHeader.toLowerCase().startsWith('bearer ')) {
+    const token = authHeader.slice(7).trim()
+    decoded = decodeToken(token)
+  }
 
-  const token = authHeader.slice(7).trim()
-  const supaUser = await verifySupabaseToken(token)
-  if (!supaUser) return null
-
-  const role = supaUser.userMetadata.role
-  if (role === 'company') {
-    const company = await db.company.findUnique({ where: { supabaseUid: supaUser.id } })
-    if (!company) return null
-    return {
-      role: 'company',
-      company: {
-        id: company.id,
-        name: company.name,
-        email: company.email,
-        industry: company.industry,
-        contactPerson: company.contactPerson,
-        location: company.location,
-        emailVerified: true, // Supabase guarantees email-confirmed accounts have a session
-      },
+  // 2) Fall back to the session cookie
+  if (!decoded) {
+    const cookieStore = await cookies()
+    const cookieVal = cookieStore.get(SESSION_COOKIE)?.value
+    if (cookieVal) {
+      if (cookieVal.startsWith('company:')) {
+        const id = cookieVal.slice('company:'.length)
+        decoded = id ? { role: 'company', id } : null
+      } else {
+        decoded = { role: 'student', id: cookieVal }
+      }
     }
   }
 
-  if (role === 'student') {
-    const user = await db.user.findUnique({ where: { supabaseUid: supaUser.id } })
+  if (!decoded) return null
+
+  if (decoded.role === 'student') {
+    const user = await db.user.findUnique({ where: { id: decoded.id } })
     if (!user) return null
     return {
       role: 'student',
@@ -50,12 +94,25 @@ export async function getSessionPrincipal(): Promise<SessionPrincipal | null> {
         email: user.email,
         course: user.course,
         college: user.college,
-        emailVerified: true,
+        emailVerified: user.emailVerified,
       },
     }
   }
 
-  return null
+  const company = await db.company.findUnique({ where: { id: decoded.id } })
+  if (!company) return null
+  return {
+    role: 'company',
+    company: {
+      id: company.id,
+      name: company.name,
+      email: company.email,
+      industry: company.industry,
+      contactPerson: company.contactPerson,
+      location: company.location,
+      emailVerified: company.emailVerified,
+    },
+  }
 }
 
 export async function getSessionUser(): Promise<AuthUser | null> {
@@ -66,9 +123,7 @@ export async function getSessionUser(): Promise<AuthUser | null> {
 
 export async function requireSessionUser(): Promise<AuthUser> {
   const user = await getSessionUser()
-  if (!user) {
-    throw new Error('Unauthorized')
-  }
+  if (!user) throw new Error('Unauthorized')
   return user
 }
 
@@ -80,22 +135,6 @@ export async function getSessionCompany(): Promise<CompanyAuthUser | null> {
 
 export async function requireSessionCompany(): Promise<CompanyAuthUser> {
   const company = await getSessionCompany()
-  if (!company) {
-    throw new Error('Unauthorized')
-  }
+  if (!company) throw new Error('Unauthorized')
   return company
-}
-
-// ---- Helpers for the /api/auth/profile route ----
-
-/**
- * Extract + verify the raw Supabase user (without requiring a local profile
- * row yet). Used during signup→verifyOtp, before the profile is created.
- */
-export async function getVerifiedSupabaseUser() {
-  const headerStore = await headers()
-  const authHeader = headerStore.get('authorization') ?? ''
-  if (!authHeader.toLowerCase().startsWith('bearer ')) return null
-  const token = authHeader.slice(7).trim()
-  return verifySupabaseToken(token)
 }

@@ -19,14 +19,15 @@ datasource db {
 }
 
 model User {
-  id            String   @id @default(cuid())
-  supabaseUid   String   @unique   // Supabase auth.users id
-  name          String
-  email         String   @unique
-  course        String?
-  college       String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id             String   @id @default(cuid())
+  name           String
+  email          String   @unique
+  password       String
+  course         String?
+  college        String?
+  emailVerified  Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   resumes       Resume[]
   applications  Application[]
@@ -51,12 +52,13 @@ model Resume {
 
 model Company {
   id             String   @id @default(cuid())
-  supabaseUid    String   @unique   // Supabase auth.users id
   name           String
   email          String   @unique
+  password       String
   industry       String?
   contactPerson  String?
   location       String?
+  emailVerified  Boolean  @default(true)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
