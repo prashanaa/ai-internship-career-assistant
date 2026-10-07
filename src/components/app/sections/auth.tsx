@@ -17,6 +17,7 @@ import { Loader2, GraduationCap, Building2 } from 'lucide-react'
 import type { ApiResponse, SessionPrincipal, Resume, Application, InternshipNotification } from '@/lib/types'
 import { apiFetch } from '@/lib/api'
 import { supabaseBrowser } from '@/lib/supabase-browser'
+import { PasswordInput } from '@/components/app/password-input'
 
 export function AuthSection() {
   const {
@@ -317,9 +318,8 @@ export function AuthSection() {
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="cpass">Password</Label>
-                  <Input
+                  <PasswordInput
                     id="cpass"
-                    type="password"
                     required
                     value={companyForm.password}
                     onChange={setCompanyField('password')}
@@ -384,9 +384,8 @@ export function AuthSection() {
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="spass">Password</Label>
-                  <Input
+                  <PasswordInput
                     id="spass"
-                    type="password"
                     required
                     value={studentForm.password}
                     onChange={setStudentField('password')}
@@ -404,15 +403,14 @@ export function AuthSection() {
               </form>
             )}
 
-            <div className="mt-3 flex items-center justify-center gap-3 text-sm text-muted-foreground">
-              <button
-                type="button"
-                className="text-brand font-semibold hover:underline"
-                onClick={() => setAuthMode(isRegister ? 'login' : 'register')}
-              >
-                {isRegister ? 'Already registered? Login' : "Don't have an account? Register"}
-              </button>
-            </div>
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full border-brand text-brand hover:bg-brand hover:text-white"
+              onClick={() => setAuthMode(isRegister ? 'login' : 'register')}
+            >
+              {isRegister ? 'Already registered? Sign in' : "Don't have an account? Sign up"}
+            </Button>
             <div className="mt-2 flex items-center justify-center gap-1 text-xs text-muted-foreground">
               <button
                 type="button"
