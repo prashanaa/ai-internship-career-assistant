@@ -1,12 +1,15 @@
 // Server-side Supabase client for verifying user access tokens.
 //
-// We do NOT use the service_role key here — verification of a user's JWT
-// works with the publishable key via supabase.auth.getUser(token), which
-// hits the /auth/v1/user endpoint with the bearer token. Prisma (direct
-// Postgres connection) handles all DB writes/reads, so we don't need admin
-// Supabase access.
+// IMPORTANT: the client is created LAZILY (inside a function), not at module
+// top-level. This is because Next.js evaluates server route modules during
+// `next build` to "collect page data" — and at build time the Supabase env
+// vars may not be set (they're runtime vars). Calling createClient('', '')
+// at module load would throw "Failed to collect page data for /api/auth/me".
+// By deferring creation to the first request, the build succeeds even
+// without the env vars, and the client is created with the real values
+// at runtime when a request arrives.
 
-import { createClient } from '@supabase/supabase-js'
+import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
 const SUPABASE_PUBLISHABLE_KEY =
@@ -14,9 +17,20 @@ const SUPABASE_PUBLISHABLE_KEY =
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
   ''
 
-export const supabaseServer = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
-  auth: { persistSession: false, autoRefreshToken: false },
-})
+let _client: SupabaseClient | null = null
+
+function getClient(): SupabaseClient {
+  if (_client) return _client
+  if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
+    throw new Error(
+      'Supabase is not configured. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY in your environment.'
+    )
+  }
+  _client = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  })
+  return _client
+}
 
 export interface SupabaseUser {
   id: string
@@ -24,10 +38,8 @@ export interface SupabaseUser {
   userMetadata: {
     role?: 'student' | 'company'
     name?: string
-    // student fields
     course?: string
     college?: string
-    // company fields
     industry?: string
     contactPerson?: string
     location?: string
@@ -44,7 +56,7 @@ export async function verifySupabaseToken(accessToken: string): Promise<Supabase
     const {
       data: { user },
       error,
-    } = await supabaseServer.auth.getUser(accessToken)
+    } = await getClient().auth.getUser(accessToken)
     if (error || !user) return null
     return {
       id: user.id,
