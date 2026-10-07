@@ -1,9 +1,8 @@
 #!/bin/bash
-# Start the dev server with all Supabase env vars inline (resilient to .env resets).
-export DATABASE_URL="postgresql://postgres.qulxgxqpocuodmobwrfp:Prashanaa%402008@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres?pgbouncer=true"
-export DIRECT_URL="postgresql://postgres.qulxgxqpocuodmobwrfp:Prashanaa%402008@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres"
-export NEXT_PUBLIC_SUPABASE_URL="https://qulxgxqpocuodmobwrfp.supabase.co"
-export NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY="sb_publishable_otqGdiTs0obGb_KSWdzytQ_TOJxVVu-"
+# Start the dev server with the env vars the app needs (SQLite + Dahl).
+# The sandbox's startup script already exports DATABASE_URL to the SQLite
+# path, but we set it explicitly here so the app always uses SQLite.
+export DATABASE_URL="file:/home/z/my-project/db/custom.db"
 export DAHL_API_BASE="https://inference.dahl.global/v1"
 export DAHL_API_KEY="dahl_ERVacbVJcFs4XZZuqwdJMx5DoTAEau6Lw"
 export DAHL_MODEL="MiniMaxAI/MiniMax-M2.7"

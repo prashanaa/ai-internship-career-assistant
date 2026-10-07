@@ -1,14 +1,8 @@
 // One-off cleanup script: delete all users, companies, resumes, applications,
-// and notifications from the Prisma DB (keeps the seeded Internships).
-// Run with: DIRECT_URL=... bun run scripts/cleanup-users.ts
+// and notifications from the local SQLite DB (keeps the seeded Internships).
+// Run with: bun run scripts/cleanup-users.ts
 
-import { PrismaClient } from '@prisma/client'
-
-const db = new PrismaClient({
-  // Use the session pooler (DIRECT_URL) for this admin script — the
-  // transaction pooler can't run DDL / multi-statement cleanups reliably.
-  datasources: { db: { url: process.env.DIRECT_URL } },
-})
+import { db } from '@/lib/db'
 
 async function main() {
   const n1 = await db.notification.deleteMany({})
