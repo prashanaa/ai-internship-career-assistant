@@ -34,14 +34,12 @@ export async function POST(req: NextRequest) {
 
     if (!company.emailVerified) {
       const otp = await issueOtp(email, 'company')
-      const sendResult = await sendOtpEmail(email, otp.code, 'company')
-      return NextResponse.json<
-        ApiResponse<{ requiresOtp: true; email: string; devOtp?: string }>
-      >(
+      await sendOtpEmail(email, otp.code, 'company')
+      return NextResponse.json<ApiResponse<{ requiresOtp: true; email: string }>>(
         {
           success: false,
           error: 'Please verify your company email to continue.',
-          data: { requiresOtp: true, email, devOtp: sendResult.devCode },
+          data: { requiresOtp: true, email },
         },
         { status: 403 }
       )

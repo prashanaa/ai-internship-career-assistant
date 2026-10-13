@@ -35,14 +35,12 @@ export async function POST(req: NextRequest) {
     // Block login until email is verified — issue a fresh OTP.
     if (!user.emailVerified) {
       const otp = await issueOtp(email, 'student')
-      const sendResult = await sendOtpEmail(email, otp.code, 'student')
-      return NextResponse.json<
-        ApiResponse<{ requiresOtp: true; email: string; devOtp?: string }>
-      >(
+      await sendOtpEmail(email, otp.code, 'student')
+      return NextResponse.json<ApiResponse<{ requiresOtp: true; email: string }>>(
         {
           success: false,
           error: 'Please verify your email to continue.',
-          data: { requiresOtp: true, email, devOtp: sendResult.devCode },
+          data: { requiresOtp: true, email },
         },
         { status: 403 }
       )

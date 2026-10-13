@@ -69,7 +69,7 @@ export function AuthSection() {
         ? studentForm
         : { email: studentForm.email, password: studentForm.password }
       const data = await apiFetch<
-        ApiResponse<AuthUser & { sessionToken: string; requiresOtp?: true; devOtp?: string }>
+        ApiResponse<AuthUser & { sessionToken: string; requiresOtp?: true }>
       >(endpoint, { method: 'POST', body: JSON.stringify(payload), auth: false })
 
       // Login of an unverified account → 403 with requiresOtp in data
@@ -77,7 +77,6 @@ export function AuthSection() {
         setPendingOtp({
           email: data.data.email ?? studentForm.email,
           role: 'student',
-          devOtp: data.data.devOtp,
         })
         toast.info('Please verify your email to continue.')
         return
@@ -87,13 +86,13 @@ export function AuthSection() {
       }
 
       setToken(data.data.sessionToken)
-      const { sessionToken: _t, requiresOtp: _ro, devOtp: _do, ...authUser } = data.data
+      const { sessionToken: _t, requiresOtp: _ro, ...authUser } = data.data
       setRole('student')
       setUser(authUser)
       setCompany(null)
 
       if (data.data.requiresOtp) {
-        setPendingOtp({ email: authUser.email, role: 'student', devOtp: data.data.devOtp })
+        setPendingOtp({ email: authUser.email, role: 'student' })
         toast.success('Account created! Enter the OTP we emailed you to verify.')
         return
       }
@@ -124,14 +123,13 @@ export function AuthSection() {
         ? companyForm
         : { email: companyForm.email, password: companyForm.password }
       const data = await apiFetch<
-        ApiResponse<CompanyAuthUser & { sessionToken: string; requiresOtp?: true; devOtp?: string }>
+        ApiResponse<CompanyAuthUser & { sessionToken: string; requiresOtp?: true }>
       >(endpoint, { method: 'POST', body: JSON.stringify(payload), auth: false })
 
       if (!data.success && data.data?.requiresOtp) {
         setPendingOtp({
           email: data.data.email ?? companyForm.email,
           role: 'company',
-          devOtp: data.data.devOtp,
         })
         toast.info('Please verify your company email to continue.')
         return
@@ -141,13 +139,13 @@ export function AuthSection() {
       }
 
       setToken(data.data.sessionToken)
-      const { sessionToken: _t, requiresOtp: _ro, devOtp: _do, ...companyUser } = data.data
+      const { sessionToken: _t, requiresOtp: _ro, ...companyUser } = data.data
       setRole('company')
       setCompany(companyUser)
       setUser(null)
 
       if (data.data.requiresOtp) {
-        setPendingOtp({ email: companyUser.email, role: 'company', devOtp: data.data.devOtp })
+        setPendingOtp({ email: companyUser.email, role: 'company' })
         toast.success('Company account created! Enter the OTP we emailed you to verify.')
         return
       }

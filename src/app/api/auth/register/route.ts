@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
 
     // Issue + send email OTP for verification
     const otp = await issueOtp(email, 'student')
-    const sendResult = await sendOtpEmail(email, otp.code, 'student')
+    await sendOtpEmail(email, otp.code, 'student')
 
     const authUser: AuthUser = {
       id: user.id,
@@ -54,16 +54,9 @@ export async function POST(req: NextRequest) {
       emailVerified: false,
     }
 
-    return NextResponse.json<
-      ApiResponse<AuthUser & { sessionToken: string; requiresOtp: true; devOtp?: string }>
-    >({
+    return NextResponse.json<ApiResponse<AuthUser & { sessionToken: string; requiresOtp: true }>>({
       success: true,
-      data: {
-        ...authUser,
-        sessionToken: buildStudentToken(user.id),
-        requiresOtp: true,
-        devOtp: sendResult.devCode,
-      },
+      data: { ...authUser, sessionToken: buildStudentToken(user.id), requiresOtp: true },
     })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Registration failed'

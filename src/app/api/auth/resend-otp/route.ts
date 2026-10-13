@@ -33,11 +33,11 @@ export async function POST(req: NextRequest) {
     }
 
     const otp = await issueOtp(email, role)
-    const sendResult = await sendOtpEmail(email, otp.code, role)
+    await sendOtpEmail(email, otp.code, role)
 
-    return NextResponse.json<ApiResponse<{ sent: true; devOtp?: string }>>({
+    return NextResponse.json<ApiResponse<{ sent: true }>>({
       success: true,
-      data: { sent: true, devOtp: sendResult.devCode },
+      data: { sent: true },
     })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to resend code'

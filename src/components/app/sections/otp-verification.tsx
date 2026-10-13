@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { toast } from 'sonner'
-import { Loader2, ShieldCheck, Mail, ArrowLeft, KeyRound, Sparkles } from 'lucide-react'
+import { Loader2, ShieldCheck, Mail, ArrowLeft, KeyRound } from 'lucide-react'
 import type { ApiResponse, AuthUser, CompanyAuthUser } from '@/lib/types'
 import { apiFetch, setToken } from '@/lib/api'
 
@@ -27,15 +27,9 @@ export function OtpVerification() {
     return () => clearTimeout(t)
   }, [resendIn])
 
-  useEffect(() => {
-    if (pendingOtp?.devOtp && pendingOtp.devOtp.length === 6) {
-      setDigits(pendingOtp.devOtp.split(''))
-    }
-  }, [pendingOtp?.devOtp])
-
   if (!pendingOtp) return null
 
-  const { email, role, devOtp } = pendingOtp
+  const { email, role } = pendingOtp
   const code = digits.join('')
 
   const setDigit = (i: number, val: string) => {
@@ -115,16 +109,13 @@ export function OtpVerification() {
     if (resendIn > 0) return
     setLoading(true)
     try {
-      const data = await apiFetch<ApiResponse<{ sent: true; devOtp?: string }>>(
+      const data = await apiFetch<ApiResponse<{ sent: true }>>(
         '/api/auth/resend-otp',
         { method: 'POST', body: JSON.stringify({ email, role }), auth: false }
       )
       if (!data.success) {
         if (data.cooldown) setResendIn(Number((data as { cooldown: number }).cooldown))
         throw new Error(data.error || 'Failed to resend code')
-      }
-      if (data.data?.devOtp) {
-        setPendingOtp({ email, role, devOtp: data.data.devOtp })
       }
       toast.success('A new code has been sent to your email.')
       setResendIn(30)
@@ -202,32 +193,6 @@ export function OtpVerification() {
                 </button>
               )}
             </div>
-
-            {/* Dev-mode hint — only shows when SMTP isn't configured */}
-            {devOtp && (
-              <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-center">
-                <p className="text-xs font-semibold text-amber-800 flex items-center justify-center gap-1">
-                  <Sparkles className="h-3.5 w-3.5" />
-                  Dev mode (SMTP not configured)
-                </p>
-                <p className="mt-1 text-sm text-amber-800">
-                  Your verification code:{' '}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setDigits(devOtp.split(''))
-                      inputsRef.current[5]?.focus()
-                    }}
-                    className="font-mono font-bold text-lg tracking-widest underline decoration-dotted hover:text-amber-900"
-                  >
-                    {devOtp}
-                  </button>
-                </p>
-                <p className="mt-1 text-[11px] text-amber-700/80">
-                  Click the code to auto-fill. Add SMTP env vars to send real emails.
-                </p>
-              </div>
-            )}
 
             <div className="flex items-center justify-center gap-4 text-xs text-muted-foreground">
               <button

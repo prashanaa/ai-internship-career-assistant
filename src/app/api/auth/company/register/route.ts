@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
     await setCompanySession(company.id)
 
     const otp = await issueOtp(email, 'company')
-    const sendResult = await sendOtpEmail(email, otp.code, 'company')
+    await sendOtpEmail(email, otp.code, 'company')
 
     const companyUser: CompanyAuthUser = {
       id: company.id,
@@ -62,16 +62,9 @@ export async function POST(req: NextRequest) {
       emailVerified: false,
     }
 
-    return NextResponse.json<
-      ApiResponse<CompanyAuthUser & { sessionToken: string; requiresOtp: true; devOtp?: string }>
-    >({
+    return NextResponse.json<ApiResponse<CompanyAuthUser & { sessionToken: string; requiresOtp: true }>>({
       success: true,
-      data: {
-        ...companyUser,
-        sessionToken: buildCompanyToken(company.id),
-        requiresOtp: true,
-        devOtp: sendResult.devCode,
-      },
+      data: { ...companyUser, sessionToken: buildCompanyToken(company.id), requiresOtp: true },
     })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Registration failed'

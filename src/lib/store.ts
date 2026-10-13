@@ -26,7 +26,6 @@ export type PageView =
 interface PendingOtp {
   email: string
   role: 'student' | 'company'
-  devOtp?: string
 }
 
 interface AppState {

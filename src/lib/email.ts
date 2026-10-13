@@ -1,9 +1,9 @@
 // Email sender for OTP verification.
 //
-// Transport: if SMTP_* env vars are configured → real SMTP via nodemailer.
-// Otherwise → "dev mode": the OTP is logged server-side AND returned to the
-// caller so the frontend can display it (clearly marked as dev). This keeps
-// the OTP flow fully testable without email credentials.
+// Transport: if SMTP_* env vars are configured → real SMTP via nodemailer,
+// and the OTP is delivered to the user's inbox. If SMTP is NOT configured,
+// the code is logged server-side only (in dev.log) — it is NEVER returned
+// to the frontend, so it is never shown on screen.
 //
 // To enable real email delivery, set these in .env:
 //   SMTP_HOST=smtp.gmail.com
@@ -41,7 +41,6 @@ function getTransport(): Transporter | null {
 
 export interface SendOtpResult {
   delivered: boolean
-  devCode?: string
   error?: string
 }
 
@@ -65,8 +64,11 @@ export async function sendOtpEmail(
 
   const transport = getTransport()
   if (!transport) {
+    // SMTP not configured — log server-side only. The code is NEVER returned
+    // to the frontend, so it is never shown on screen. Check dev.log during
+    // testing to see the code.
     console.log(`\n[DEV EMAIL] To: ${email} | Role: ${role} | OTP code: ${code}\n`)
-    return { delivered: false, devCode: code }
+    return { delivered: false }
   }
 
   try {
@@ -75,6 +77,6 @@ export async function sendOtpEmail(
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to send email'
     console.error(`[EMAIL SEND FAILED] To: ${email} | ${message}`)
-    return { delivered: false, devCode: code, error: message }
+    return { delivered: false, error: message }
   }
 }
