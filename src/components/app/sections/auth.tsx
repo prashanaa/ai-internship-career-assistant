@@ -72,13 +72,13 @@ export function AuthSection() {
         ApiResponse<AuthUser & { sessionToken: string; requiresOtp?: true }>
       >(endpoint, { method: 'POST', body: JSON.stringify(payload), auth: false })
 
-      // Login of an unverified account → 403 with requiresOtp in data
+      // Login → 403 with requiresOtp (OTP sent to email)
       if (!data.success && data.data?.requiresOtp) {
         setPendingOtp({
           email: data.data.email ?? studentForm.email,
           role: 'student',
         })
-        toast.info('Please verify your email to continue.')
+        toast.info('Enter the OTP sent to your email to continue.')
         return
       }
       if (!data.success || !data.data) {
@@ -131,7 +131,7 @@ export function AuthSection() {
           email: data.data.email ?? companyForm.email,
           role: 'company',
         })
-        toast.info('Please verify your company email to continue.')
+        toast.info('Enter the OTP sent to your email to continue.')
         return
       }
       if (!data.success || !data.data) {

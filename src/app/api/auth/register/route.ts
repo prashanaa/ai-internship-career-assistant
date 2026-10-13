@@ -2,8 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { db } from '@/lib/db'
 import { setStudentSession, buildStudentToken } from '@/lib/session'
-import { issueOtp } from '@/lib/otp'
-import { sendOtpEmail } from '@/lib/email'
 import type { ApiResponse, AuthUser } from '@/lib/types'
 
 const RegisterSchema = z.object({
@@ -36,14 +34,10 @@ export async function POST(req: NextRequest) {
     }
 
     const user = await db.user.create({
-      data: { name, email, password, course: course ?? null, college: college ?? null },
+      data: { name, email, password, course: course ?? null, college: college ?? null, emailVerified: true },
     })
 
     await setStudentSession(user.id)
-
-    // Issue + send email OTP for verification
-    const otp = await issueOtp(email, 'student')
-    await sendOtpEmail(email, otp.code, 'student')
 
     const authUser: AuthUser = {
       id: user.id,
@@ -51,12 +45,12 @@ export async function POST(req: NextRequest) {
       email: user.email,
       course: user.course,
       college: user.college,
-      emailVerified: false,
+      emailVerified: true,
     }
 
-    return NextResponse.json<ApiResponse<AuthUser & { sessionToken: string; requiresOtp: true }>>({
+    return NextResponse.json<ApiResponse<AuthUser & { sessionToken: string }>>({
       success: true,
-      data: { ...authUser, sessionToken: buildStudentToken(user.id), requiresOtp: true },
+      data: { ...authUser, sessionToken: buildStudentToken(user.id) },
     })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Registration failed'

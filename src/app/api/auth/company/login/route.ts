@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { db } from '@/lib/db'
-import { setCompanySession, buildCompanyToken } from '@/lib/session'
 import { issueOtp } from '@/lib/otp'
 import { sendOtpEmail } from '@/lib/email'
-import type { ApiResponse, CompanyAuthUser } from '@/lib/types'
+import type { ApiResponse } from '@/lib/types'
 
 const LoginSchema = z.object({
   email: z.string().email('Invalid email'),
@@ -32,35 +31,17 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    if (!company.emailVerified) {
-      const otp = await issueOtp(email, 'company')
-      await sendOtpEmail(email, otp.code, 'company')
-      return NextResponse.json<ApiResponse<{ requiresOtp: true; email: string }>>(
-        {
-          success: false,
-          error: 'Please verify your company email to continue.',
-          data: { requiresOtp: true, email },
-        },
-        { status: 403 }
-      )
-    }
-
-    await setCompanySession(company.id)
-
-    const companyUser: CompanyAuthUser = {
-      id: company.id,
-      name: company.name,
-      email: company.email,
-      industry: company.industry,
-      contactPerson: company.contactPerson,
-      location: company.location,
-      emailVerified: company.emailVerified,
-    }
-
-    return NextResponse.json<ApiResponse<CompanyAuthUser & { sessionToken: string }>>({
-      success: true,
-      data: { ...companyUser, sessionToken: buildCompanyToken(company.id) },
-    })
+    // Login ALWAYS triggers an OTP sent to the company's email.
+    const otp = await issueOtp(email, 'company')
+    await sendOtpEmail(email, otp.code, 'company')
+    return NextResponse.json<ApiResponse<{ requiresOtp: true; email: string }>>(
+      {
+        success: false,
+        error: 'Enter the OTP sent to your email to continue.',
+        data: { requiresOtp: true, email },
+      },
+      { status: 403 }
+    )
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Login failed'
     return NextResponse.json<ApiResponse<null>>({ success: false, error: message }, { status: 500 })
