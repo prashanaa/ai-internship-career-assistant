@@ -16,7 +16,7 @@ model User {
   password       String
   course         String?
   college        String?
-  emailVerified  Boolean  @default(true)
+  emailVerified  Boolean  @default(false)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -49,7 +49,7 @@ model Company {
   industry       String?
   contactPerson  String?
   location       String?
-  emailVerified  Boolean  @default(true)
+  emailVerified  Boolean  @default(false)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -108,4 +108,18 @@ model Notification {
 
   @@index([userId])
   @@index([internshipId])
+}
+
+// One-time codes for email verification (students + companies)
+model OtpCode {
+  id        String   @id @default(cuid())
+  email     String
+  code      String
+  role      String   // 'student' | 'company'
+  consumed  Boolean  @default(false)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([email])
+  @@index([code])
 }

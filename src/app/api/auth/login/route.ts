@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { db } from '@/lib/db'
 import { setStudentSession, buildStudentToken } from '@/lib/session'
+import { issueOtp } from '@/lib/otp'
+import { sendOtpEmail } from '@/lib/email'
 import type { ApiResponse, AuthUser } from '@/lib/types'
 
 const LoginSchema = z.object({
@@ -30,6 +32,22 @@ export async function POST(req: NextRequest) {
       )
     }
 
+    // Block login until email is verified — issue a fresh OTP.
+    if (!user.emailVerified) {
+      const otp = await issueOtp(email, 'student')
+      const sendResult = await sendOtpEmail(email, otp.code, 'student')
+      return NextResponse.json<
+        ApiResponse<{ requiresOtp: true; email: string; devOtp?: string }>
+      >(
+        {
+          success: false,
+          error: 'Please verify your email to continue.',
+          data: { requiresOtp: true, email, devOtp: sendResult.devCode },
+        },
+        { status: 403 }
+      )
+    }
+
     await setStudentSession(user.id)
 
     const authUser: AuthUser = {
@@ -38,7 +56,7 @@ export async function POST(req: NextRequest) {
       email: user.email,
       course: user.course,
       college: user.college,
-      emailVerified: true,
+      emailVerified: user.emailVerified,
     }
 
     return NextResponse.json<ApiResponse<AuthUser & { sessionToken: string }>>({
