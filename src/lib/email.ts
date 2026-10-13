@@ -1,33 +1,34 @@
-// Email sender for OTP verification.
+// OTP email sender using the Resend API.
 //
-// Transport: if SMTP_* env vars are configured → real SMTP via nodemailer,
-// and the OTP is delivered to the user's inbox. If SMTP is NOT configured,
-// the code is logged server-side only (in dev.log) — it is NEVER returned
-// to the frontend, so it is never shown on screen.
+// Uses the Resend API (api.resend.com) — no SMTP credentials needed.
+// The sender is onboarding@resend.dev (Resend's default testing sender).
 //
-// To enable real email delivery, set these in .env:
-//   SMTP_HOST=smtp.gmail.com
-//   SMTP_PORT=465
-//   SMTP_USER=yourname@gmail.com
-//   SMTP_PASS=<16-char Gmail App Password>  (NOT your login password)
-//   SMTP_FROM="CareerAssist <yourname@gmail.com>"
+// Note: without a verified domain in Resend, emails are delivered only to
+// the email registered on the Resend account. To send to ANY recipient,
+// verify a domain at resend.com/domains and update RESEND_FROM below.
+//
+// To switch to SMTP (e.g. Gmail) instead, set SMTP_* env vars — the code
+// falls back to nodemailer if SMTP is configured.
 
 import nodemailer from 'nodemailer'
 import type { Transporter } from 'nodemailer'
 
+const RESEND_API_KEY = process.env.RESEND_API_KEY || ''
+const RESEND_FROM = process.env.RESEND_FROM || 'onboarding@resend.dev'
+
+// ---- SMTP fallback (optional — if you configure Gmail SMTP) ----
 const SMTP_HOST = process.env.SMTP_HOST
 const SMTP_PORT = process.env.SMTP_PORT ? Number(process.env.SMTP_PORT) : undefined
 const SMTP_USER = process.env.SMTP_USER
 const SMTP_PASS = process.env.SMTP_PASS
 const SMTP_FROM = process.env.SMTP_FROM || 'CareerAssist <no-reply@careerassist.app>'
-
 let cachedTransport: Transporter | null = null
 
-export function isSmtpConfigured(): boolean {
+function isSmtpConfigured(): boolean {
   return Boolean(SMTP_HOST && SMTP_PORT && SMTP_USER && SMTP_PASS)
 }
 
-function getTransport(): Transporter | null {
+function getSmtpTransport(): Transporter | null {
   if (!isSmtpConfigured()) return null
   if (cachedTransport) return cachedTransport
   cachedTransport = nodemailer.createTransport({
@@ -62,21 +63,42 @@ export async function sendOtpEmail(
       <p style="color:#999;font-size:12px;">— CareerAssist Team · ${role === 'company' ? 'Company' : 'Student'} account verification</p>
     </div>`
 
-  const transport = getTransport()
-  if (!transport) {
-    // SMTP not configured — log server-side only. The code is NEVER returned
-    // to the frontend, so it is never shown on screen. Check dev.log during
-    // testing to see the code.
-    console.log(`\n[DEV EMAIL] To: ${email} | Role: ${role} | OTP code: ${code}\n`)
-    return { delivered: false }
+  // ---- Priority 1: SMTP (if configured — sends to ANY recipient) ----
+  const smtp = getSmtpTransport()
+  if (smtp) {
+    try {
+      await smtp.sendMail({ from: SMTP_FROM, to: email, subject, text, html })
+      return { delivered: true }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to send email'
+      console.error(`[SMTP FAILED] To: ${email} | ${msg}`)
+      // Fall through to Resend
+    }
   }
 
+  // ---- Priority 2: Resend API (sends to the account email; or any if domain verified) ----
   try {
-    await transport.sendMail({ from: SMTP_FROM, to: email, subject, text, html })
-    return { delivered: true }
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${RESEND_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ from: RESEND_FROM, to: email, subject, html }),
+    })
+    const data = await res.json()
+    if (data.id) {
+      return { delivered: true }
+    }
+    const errMsg =
+      data.message ||
+      data.error?.message ||
+      (typeof data.error === 'string' ? data.error : 'Resend API error')
+    console.error(`[RESEND FAILED] To: ${email} | ${errMsg}`)
+    return { delivered: false, error: errMsg }
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Failed to send email'
-    console.error(`[EMAIL SEND FAILED] To: ${email} | ${message}`)
-    return { delivered: false, error: message }
+    const msg = err instanceof Error ? err.message : 'Resend request failed'
+    console.error(`[RESEND FAILED] To: ${email} | ${msg}`)
+    return { delivered: false, error: msg }
   }
 }
