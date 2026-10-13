@@ -38,7 +38,6 @@ export function AuthSection() {
     setApplications,
     setNotifications,
     setPage,
-    setPendingOtp,
   } = useAppStore()
   const [loading, setLoading] = useState(false)
   const [studentForm, setStudentForm] = useState({
@@ -68,35 +67,18 @@ export function AuthSection() {
       const payload = isRegister
         ? studentForm
         : { email: studentForm.email, password: studentForm.password }
-      const data = await apiFetch<
-        ApiResponse<AuthUser & { sessionToken: string; requiresOtp?: true }>
-      >(endpoint, { method: 'POST', body: JSON.stringify(payload), auth: false })
-
-      // Login → 403 with requiresOtp (OTP sent to email)
-      if (!data.success && data.data?.requiresOtp) {
-        setPendingOtp({
-          email: data.data.email ?? studentForm.email,
-          role: 'student',
-        })
-        toast.info('Enter the OTP sent to your email to continue.')
-        return
-      }
+      const data = await apiFetch<ApiResponse<AuthUser & { sessionToken: string }>>(
+        endpoint,
+        { method: 'POST', body: JSON.stringify(payload), auth: false }
+      )
       if (!data.success || !data.data) {
         throw new Error(data.error || 'Something went wrong')
       }
-
       setToken(data.data.sessionToken)
-      const { sessionToken: _t, requiresOtp: _ro, ...authUser } = data.data
+      const { sessionToken: _t, ...authUser } = data.data
       setRole('student')
       setUser(authUser)
       setCompany(null)
-
-      if (data.data.requiresOtp) {
-        setPendingOtp({ email: authUser.email, role: 'student' })
-        toast.success('Account created! Enter the OTP we emailed you to verify.')
-        return
-      }
-
       toast.success(isRegister ? 'Student account created!' : 'Welcome back!')
       const [resumeRes, appsRes, notifRes] = await Promise.all([
         apiFetch<ApiResponse<Resume>>('/api/resume').catch(() => null),
@@ -122,34 +104,18 @@ export function AuthSection() {
       const payload = isRegister
         ? companyForm
         : { email: companyForm.email, password: companyForm.password }
-      const data = await apiFetch<
-        ApiResponse<CompanyAuthUser & { sessionToken: string; requiresOtp?: true }>
-      >(endpoint, { method: 'POST', body: JSON.stringify(payload), auth: false })
-
-      if (!data.success && data.data?.requiresOtp) {
-        setPendingOtp({
-          email: data.data.email ?? companyForm.email,
-          role: 'company',
-        })
-        toast.info('Enter the OTP sent to your email to continue.')
-        return
-      }
+      const data = await apiFetch<ApiResponse<CompanyAuthUser & { sessionToken: string }>>(
+        endpoint,
+        { method: 'POST', body: JSON.stringify(payload), auth: false }
+      )
       if (!data.success || !data.data) {
         throw new Error(data.error || 'Something went wrong')
       }
-
       setToken(data.data.sessionToken)
-      const { sessionToken: _t, requiresOtp: _ro, ...companyUser } = data.data
+      const { sessionToken: _t, ...companyUser } = data.data
       setRole('company')
       setCompany(companyUser)
       setUser(null)
-
-      if (data.data.requiresOtp) {
-        setPendingOtp({ email: companyUser.email, role: 'company' })
-        toast.success('Company account created! Enter the OTP we emailed you to verify.')
-        return
-      }
-
       toast.success(isRegister ? 'Company account created!' : 'Welcome back!')
       setPage('company-dashboard')
     } catch (err) {

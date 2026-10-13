@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { db } from '@/lib/db'
-import { issueOtp } from '@/lib/otp'
-import { sendOtpEmail } from '@/lib/email'
-import type { ApiResponse } from '@/lib/types'
+import { setStudentSession, buildStudentToken } from '@/lib/session'
+import type { ApiResponse, AuthUser } from '@/lib/types'
 
 const LoginSchema = z.object({
   email: z.string().email('Invalid email'),
@@ -31,17 +30,21 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Login ALWAYS triggers an OTP sent to the user's email.
-    const otp = await issueOtp(email, 'student')
-    await sendOtpEmail(email, otp.code, 'student')
-    return NextResponse.json<ApiResponse<{ requiresOtp: true; email: string }>>(
-      {
-        success: false,
-        error: 'Enter the OTP sent to your email to continue.',
-        data: { requiresOtp: true, email },
-      },
-      { status: 403 }
-    )
+    await setStudentSession(user.id)
+
+    const authUser: AuthUser = {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      course: user.course,
+      college: user.college,
+      emailVerified: true,
+    }
+
+    return NextResponse.json<ApiResponse<AuthUser & { sessionToken: string }>>({
+      success: true,
+      data: { ...authUser, sessionToken: buildStudentToken(user.id) },
+    })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Login failed'
     return NextResponse.json<ApiResponse<null>>({ success: false, error: message }, { status: 500 })
